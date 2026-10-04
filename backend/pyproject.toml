@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "automated-academics"
 version = "0.1.0"
 description = "Constraint-based timetable generator for UG/PG programs in colleges and universities"
-readme = "../README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
