@@ -279,7 +279,7 @@ export default function App() {
                       <section>
                         <h3>{selOffering.course_code}</h3>
                         <p className="muted">{inst.courses.find((c) => c.code === selOffering.course_code)?.name}</p>
-                        <p>{inst.calendar.day_names[sel.day]}, P{sel.start + 1}{sel.length > 1 ? `–P${sel.start + sel.length}` : ""}</p>
+                        <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
                         <label>Room

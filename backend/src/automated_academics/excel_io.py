@@ -2,16 +2,16 @@
 
 Workbook layout (one header row, then data rows; header names are case-insensitive):
 
-  Institution : key | value        (name, day_names, periods_per_day, break_after)
+  Institution : key | value        (name, day_names, lectures_per_day, break_after)
   Rooms       : id, name, capacity, kind
-  Faculty     : id, name, department, max_periods_per_day, unavailable
+  Faculty     : id, name, department, max_lectures_per_day, unavailable
   Batches     : id, program, level, semester, section, department, strength, group_of
   Courses     : code, name, department, credits, category, room_kind
   Offerings   : id, course_code, faculty_id, batch_ids, sessions
 
-For humans, periods are numbered from 1 and days are written by name:
+For humans, lectures are numbered from 1 and days are written by name:
   unavailable = "Mon:1, Tue:3"   batch_ids = "CS-UG1, MG-UG1"   sessions = "1,1,1" or "2"
-`break_after` is likewise 1-based: "4" means a break after the 4th period.
+`break_after` is likewise 1-based: "4" means a break after the 4th lecture.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from .models import (
 
 SHEETS: dict[str, list[str]] = {
     "Rooms": ["id", "name", "capacity", "kind"],
-    "Faculty": ["id", "name", "department", "max_periods_per_day", "unavailable"],
+    "Faculty": ["id", "name", "department", "max_lectures_per_day", "unavailable"],
     "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of"],
     "Courses": ["code", "name", "department", "credits", "category", "room_kind"],
     "Offerings": ["id", "course_code", "faculty_id", "batch_ids", "sessions"],
@@ -147,9 +147,9 @@ def _calendar(ws, issues: list[ImportIssue]) -> tuple[str, Calendar]:
     name = _text(kv.get("name")) or "Institution"
     try:
         days = _split(kv.get("day_names")) or Calendar().day_names
-        periods = _int(kv.get("periods_per_day") or 7, "periods_per_day")
+        lectures = _int(kv.get("lectures_per_day") or 7, "lectures_per_day")
         breaks = [_int(b, "break_after") - 1 for b in _split(kv.get("break_after"))]
-        return name, Calendar(day_names=days, periods_per_day=periods, break_after=breaks)
+        return name, Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks)
     except (ValueError, ValidationError) as e:
         issues.append(ImportIssue("Institution", None, str(e)))
         return name, Calendar()
@@ -172,10 +172,10 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
             day, _, per = tok.partition(":")
             if day.strip().lower() not in day_index or not per.strip():
                 raise ValueError(f"unavailable entry {tok!r} must look like 'Mon:1'")
-            p = _int(per, "unavailable period")
-            if not 1 <= p <= cal.periods_per_day:
-                raise ValueError(f"unavailable period {p} outside 1..{cal.periods_per_day}")
-            out.append(Slot(day=day_index[day.strip().lower()], period=p - 1))
+            p = _int(per, "unavailable lecture")
+            if not 1 <= p <= cal.lectures_per_day:
+                raise ValueError(f"unavailable lecture {p} outside 1..{cal.lectures_per_day}")
+            out.append(Slot(day=day_index[day.strip().lower()], lecture=p - 1))
         return out
 
     rooms = _collect(wb["Rooms"], "Rooms", issues, lambda r: Room(
@@ -184,7 +184,7 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
 
     faculty = _collect(wb["Faculty"], "Faculty", issues, lambda r: Faculty(
         id=_text(r["id"]), name=_text(r["name"]), department=_text(r["department"]),
-        max_periods_per_day=_int(r.get("max_periods_per_day") or 6, "max_periods_per_day"),
+        max_lectures_per_day=_int(r.get("max_lectures_per_day") or 6, "max_lectures_per_day"),
         unavailable=slots(r.get("unavailable"))))
 
     batches = _collect(wb["Batches"], "Batches", issues, lambda r: Batch(
@@ -256,7 +256,7 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     ws.append(["key", "value"])
     ws.append(["name", inst.name])
     ws.append(["day_names", ", ".join(cal.day_names)])
-    ws.append(["periods_per_day", cal.periods_per_day])
+    ws.append(["lectures_per_day", cal.lectures_per_day])
     ws.append(["break_after", ", ".join(str(b + 1) for b in cal.break_after)])
     _style(ws)
 
@@ -269,8 +269,8 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
         return w
 
     sheet("Rooms", [[r.id, r.name, r.capacity, r.kind.value] for r in inst.rooms])
-    sheet("Faculty", [[f.id, f.name, f.department, f.max_periods_per_day,
-                       ", ".join(f"{cal.day_names[s.day]}:{s.period + 1}" for s in f.unavailable)]
+    sheet("Faculty", [[f.id, f.name, f.department, f.max_lectures_per_day,
+                       ", ".join(f"{cal.day_names[s.day]}:{s.lecture + 1}" for s in f.unavailable)]
                       for f in inst.faculty])
     sheet("Batches", [[b.id, b.program, b.level.value, b.semester, b.section, b.department,
                        b.strength, b.group_of or ""] for b in inst.batches])

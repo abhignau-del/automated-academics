@@ -1,8 +1,8 @@
 """Excel and PDF export of a timetable.
 
 Layout rules shared by both formats
-  * one week grid (periods x days) per class, faculty member and room
-  * a multi-period session is merged vertically unless it shares cells with a
+  * one week grid (lectures x days) per class, faculty member and room
+  * a multi-lecture session is merged vertically unless it shares cells with a
     parallel session (e.g. two lab groups at once); then each cell lists the
     sessions compactly instead
 """
@@ -52,9 +52,9 @@ def course_hex(code: str) -> str:
 
 
 def layout(sessions: list[Session]) -> tuple[dict[tuple[int, int], list[int]], list[int]]:
-    """Map each (day, period) cell to the sessions covering it.
+    """Map each (day, lecture) cell to the sessions covering it.
 
-    Returns (cover, merge) where `merge` lists indices of multi-period sessions
+    Returns (cover, merge) where `merge` lists indices of multi-lecture sessions
     that own all of their cells exclusively and can therefore be merged.
     """
     cover: dict[tuple[int, int], list[int]] = {}
@@ -86,8 +86,8 @@ def compact_line(kind: Kind, s: Session) -> str:
     return " · ".join([s["course_code"], *extra])
 
 
-def period_label(s: Session) -> str:
-    return f"P{s['start'] + 1}" if s["length"] == 1 else f"P{s['start'] + 1}–P{s['start'] + s['length']}"
+def lecture_label(s: Session) -> str:
+    return f"L{s['start'] + 1}" if s["length"] == 1 else f"L{s['start'] + 1}–L{s['start'] + s['length']}"
 
 
 def _selection(inst: Institution, tt: Timetable, kind: str | None, ident: str | None):
@@ -148,9 +148,9 @@ def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Sessio
     merged = set(merge)
     starts = {(s["day"], s["start"]): i for i, s in enumerate(sessions)}
 
-    for p in range(cal.periods_per_day):
+    for p in range(cal.lectures_per_day):
         row = p + 3
-        label = ws.cell(row=row, column=1, value=f"P{p + 1}")
+        label = ws.cell(row=row, column=1, value=f"L{p + 1}")
         label.font, label.border = Font(bold=True), _BOX
         label.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[row].height = 62
@@ -195,14 +195,14 @@ def build_xlsx(inst: Institution, tt: Timetable, out: BinaryIO) -> None:
     wb = Workbook()
     flat = wb.active
     flat.title = "All sessions"
-    flat.append(["Day", "Period", "Course code", "Course", "Faculty", "Batches", "Room", "Offering"])
+    flat.append(["Day", "Lecture", "Course code", "Course", "Faculty", "Batches", "Room", "Offering"])
     for c in flat[1]:
         c.fill, c.font = _HEAD_FILL, _HEAD_FONT
     rows = []
     for eid, _ in entities(inst, "room"):
         rows += session_views(inst, tt, "room", eid)  # every session appears in exactly one room
     for s in sorted(rows, key=lambda s: (s["day"], s["start"], s["course_code"])):
-        flat.append([s["day_name"], period_label(s), s["course_code"], s["course_name"],
+        flat.append([s["day_name"], lecture_label(s), s["course_code"], s["course_name"],
                      s["faculty_name"], ", ".join(s["batch_ids"]), s["room_name"], s["offering_id"]])
     for col, w in zip("ABCDEFGH", (8, 9, 16, 34, 24, 26, 20, 18)):
         flat.column_dimensions[col].width = w
@@ -258,7 +258,7 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
     page_w, page_h = landscape(A4)
     margin = 1 * cm
     usable_w = page_w - 2 * margin
-    row_h = min(2.3 * cm, (page_h - 2 * margin - 3.2 * cm) / cal.periods_per_day)
+    row_h = min(2.3 * cm, (page_h - 2 * margin - 3.2 * cm) / cal.lectures_per_day)
     time_w = 1.2 * cm
     col_w = (usable_w - time_w) / max(cal.days, 1)
 
@@ -285,9 +285,9 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
             ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
             ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ]
-        for p in range(cal.periods_per_day):
+        for p in range(cal.lectures_per_day):
             r = p + 1
-            row: list = [Paragraph(f"<b>P{p + 1}</b>", ParagraphStyle("p", parent=cell, alignment=1))]
+            row: list = [Paragraph(f"<b>L{p + 1}</b>", ParagraphStyle("p", parent=cell, alignment=1))]
             for d in range(cal.days):
                 idxs = cover.get((d, p), [])
                 owner = idxs[0] if len(idxs) == 1 else None
@@ -311,7 +311,7 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
                           colors.Color(*course_rgb(s["course_code"]))))
 
         tbl = Table(data, colWidths=[time_w] + [col_w] * cal.days,
-                    rowHeights=[0.6 * cm] + [row_h] * cal.periods_per_day)
+                    rowHeights=[0.6 * cm] + [row_h] * cal.lectures_per_day)
         tbl.setStyle(TableStyle(style))
         story.append(tbl)
         story.append(Spacer(1, 4))

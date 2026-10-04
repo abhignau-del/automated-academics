@@ -9,11 +9,11 @@ constraint solver (Google OR-Tools CP-SAT) to produce clash-free timetables.
 
 ## What it handles today
 
-- Weekly grid with configurable days, periods and breaks (blocks never span lunch)
+- Weekly grid with configurable days, lectures and breaks (blocks never span lunch)
 - Faculty, rooms (classroom / lab / hall), batches and courses across departments
 - **Shared electives**: one offering attended by batches from several programs (MDC, VAC, AEC, open electives)
 - **Practical sub-groups**: a lab batch blocks its parent section, and two sub-groups can run labs in parallel
-- Multi-period lab blocks, room kind and capacity matching
+- Multi-lecture lab blocks, room kind and capacity matching
 - Faculty unavailability and per-day load limits
 - Soft goal: avoid repeating the same course twice on one day
 - An independent clash validator (the basis for live checking of manual edits)
@@ -44,7 +44,7 @@ print(tt.status, len(tt.placements), find_conflicts(inst, tt))
 
 Start from [docs/institution-template.xlsx](docs/institution-template.xlsx) (fictional sample data)
 and replace the rows with your own. One sheet per entity: `Institution`, `Rooms`, `Faculty`,
-`Batches`, `Courses`, `Offerings`. Periods are numbered from 1 and days are written by name
+`Batches`, `Courses`, `Offerings`. Lectures are numbered from 1 and days are written by name
 (e.g. unavailable = `Mon:1, Tue:3`). A shared elective lists several batches in `batch_ids`;
 a lab sub-group sets `group_of` to its parent batch.
 
@@ -83,7 +83,7 @@ Interactive docs at <http://127.0.0.1:8000/docs>. Data is kept in a local SQLite
 `PUT /jobs/{id}/timetable` saves a hand-edited timetable (clashes are reported but do not block
 saving), and `GET /institutions/{id}/latest-job` finds the newest finished timetable.
 
-Periods in API responses are zero-based. There is **no authentication yet**: run it on localhost
+Lectures in API responses are zero-based. There is **no authentication yet**: run it on localhost
 or behind your own access control, not directly on the public internet.
 
 ## Running the web UI
@@ -116,7 +116,7 @@ timetable (the menu asks you to save first), and warn if it still has unresolved
 | `GET /jobs/{id}/export.pdf?kind=batch&id=CS-UG1` | One page for a single class (`kind` is `batch`, `faculty` or `room`; omit `id` for all of that kind) |
 | `GET /jobs/{id}/export.xlsx` | Workbook with an "All sessions" list plus one week grid per class, faculty member and room |
 
-Multi-period labs are merged into one block, and parallel lab groups are listed together in a cell.
+Multi-lecture labs are merged into one block, and parallel lab groups are listed together in a cell.
 
 **Hindi and other Indian scripts in PDFs.** The built-in PDF fonts only draw Latin text, so
 non-Latin names would print as boxes. Point `AA_PDF_FONT` at a TrueType font that covers your

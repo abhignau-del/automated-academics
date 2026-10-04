@@ -26,7 +26,7 @@ def entities(inst: Institution, kind: Kind) -> list[tuple[str, str]]:
 def session_views(inst: Institution, tt: Timetable, kind: Kind, ident: str) -> list[dict[str, Any]]:
     """Sessions of one entity, sorted by day and start, with names resolved.
 
-    Raises LookupError if the entity does not exist. Periods are zero-based.
+    Raises LookupError if the entity does not exist. Lectures are zero-based.
     """
     offerings = {o.id: o for o in inst.offerings}
     courses = {c.code: c for c in inst.courses}

@@ -4,7 +4,7 @@ An *Offering* is one course delivered by one faculty member to one or more
 batches. Listing several batches models CBCS/NEP shared electives (MDC, VAC,
 AEC, open electives) that students from different programs attend together.
 Each offering is split into weekly *sessions*; a lab is typically one session
-of 2-3 consecutive periods.
+of 2-3 consecutive lectures.
 """
 
 from __future__ import annotations
@@ -27,16 +27,16 @@ class Level(str, Enum):
 
 class Slot(BaseModel):
     day: int = Field(ge=0)
-    period: int = Field(ge=0)
+    lecture: int = Field(ge=0)
 
 
 class Calendar(BaseModel):
-    """Weekly grid. Days and periods are zero-based indices."""
+    """Weekly grid. Days and lectures are zero-based indices."""
 
     day_names: list[str] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-    periods_per_day: int = Field(default=7, ge=1)
-    # A block may not span the boundary after any period listed here
-    # (e.g. [3] = lunch between the 4th and 5th period).
+    lectures_per_day: int = Field(default=7, ge=1)
+    # A block may not span the boundary after any lecture listed here
+    # (e.g. [3] = lunch between the 4th and 5th lecture).
     break_after: list[int] = [3]
 
     @property
@@ -45,7 +45,7 @@ class Calendar(BaseModel):
 
     def block_fits(self, start: int, length: int) -> bool:
         end = start + length - 1
-        if start < 0 or end >= self.periods_per_day:
+        if start < 0 or end >= self.lectures_per_day:
             return False
         return not any(start <= b < end for b in self.break_after)
 
@@ -62,7 +62,7 @@ class Faculty(BaseModel):
     name: str
     department: str
     unavailable: list[Slot] = []
-    max_periods_per_day: int = Field(default=6, ge=1)
+    max_lectures_per_day: int = Field(default=6, ge=1)
 
 
 class Batch(BaseModel):
@@ -96,7 +96,7 @@ class Offering(BaseModel):
     course_code: str
     faculty_id: str
     batch_ids: list[str] = Field(min_length=1)
-    # Length (in periods) of each weekly session, e.g. [1, 1, 1] or [2].
+    # Length (in lectures) of each weekly session, e.g. [1, 1, 1] or [2].
     sessions: list[int] = Field(min_length=1)
 
     @model_validator(mode="after")

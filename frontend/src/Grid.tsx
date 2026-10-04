@@ -29,7 +29,7 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
   }), [inst]);
   const lanes = useMemo(() => assignLanes(items), [items]);
 
-  const periodAt = (e: React.DragEvent<HTMLElement>) => {
+  const lectureAt = (e: React.DragEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const grab = drag.current?.grab ?? 0;
     return Math.floor((e.clientY - rect.top) / ROW_H) - grab;
@@ -40,7 +40,7 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
     if (!d) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    const start = periodAt(e);
+    const start = lectureAt(e);
     if (!hover || hover.day !== day || hover.start !== start) {
       setHover({ day, start, length: d.length, ok: blockFits(cal, start, d.length) });
     }
@@ -52,7 +52,7 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
     drag.current = null;
     setHover(null);
     if (!d) return;
-    const start = periodAt(e);
+    const start = lectureAt(e);
     if (blockFits(cal, start, d.length)) onMove(d.key, day, start);
   };
 
@@ -73,9 +73,9 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
       {cal.day_names.map((d) => <div key={d} className="grid-day">{d}</div>)}
 
       <div className="grid-times">
-        {Array.from({ length: cal.periods_per_day }, (_, p) => (
+        {Array.from({ length: cal.lectures_per_day }, (_, p) => (
           <div key={p} className={"grid-time" + (cal.break_after.includes(p) ? " break" : "")} style={{ height: ROW_H }}>
-            <b>P{p + 1}</b>
+            <b>L{p + 1}</b>
           </div>
         ))}
       </div>
@@ -84,13 +84,13 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
         <div
           key={day}
           className="grid-col"
-          style={{ height: ROW_H * cal.periods_per_day }}
+          style={{ height: ROW_H * cal.lectures_per_day }}
           onDragOver={(e) => onDragOver(e, day)}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setHover(null); }}
           onDrop={(e) => onDrop(e, day)}
           onClick={() => onSelect(null)}
         >
-          {Array.from({ length: cal.periods_per_day }, (_, p) => (
+          {Array.from({ length: cal.lectures_per_day }, (_, p) => (
             <div key={p} className={"grid-cell" + (cal.break_after.includes(p) ? " break" : "")} style={{ height: ROW_H }} />
           ))}
 

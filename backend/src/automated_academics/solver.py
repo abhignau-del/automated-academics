@@ -4,7 +4,7 @@ Hard constraints
   * every session is placed exactly once
   * a block never spans a break and never leaves the day
   * no faculty, batch or room is double-booked
-  * faculty unavailability and max periods per day are respected
+  * faculty unavailability and max lectures per day are respected
   * room kind matches the course and capacity covers all attending batches
 
 Soft constraints (minimised)
@@ -52,7 +52,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8) -> Ti
         strength = sum(batches[b].strength for b in off.batch_ids)
         rooms = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength)]
         fac = faculty[off.faculty_id]
-        blocked = {(s.day, s.period) for s in fac.unavailable}
+        blocked = {(s.day, s.lecture) for s in fac.unavailable}
         attending = inst.occupied_batches(off.batch_ids)
 
         for i, length in enumerate(off.sessions):
@@ -62,7 +62,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8) -> Ti
                 )
             opts = []
             for d in range(cal.days):
-                for p in range(cal.periods_per_day):
+                for p in range(cal.lectures_per_day):
                     if not cal.block_fits(p, length):
                         continue
                     covered = range(p, p + length)
@@ -88,7 +88,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8) -> Ti
             model.AddAtMostOne(lits)
 
     for (fid, _d), items in fac_day_load.items():
-        model.Add(sum(v * ln for v, ln in items) <= faculty[fid].max_periods_per_day)
+        model.Add(sum(v * ln for v, ln in items) <= faculty[fid].max_lectures_per_day)
 
     penalties = []
     for (oid, d), lits in per_day.items():

@@ -9,7 +9,7 @@ export const sessionKey = (p: Pick<Placement, "offering_id" | "session_index">) 
 
 export function blockFits(cal: Calendar, start: number, length: number): boolean {
   const end = start + length - 1;
-  if (start < 0 || end >= cal.periods_per_day) return false;
+  if (start < 0 || end >= cal.lectures_per_day) return false;
   return !cal.break_after.some((b) => start <= b && b < end);
 }
 

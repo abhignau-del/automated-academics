@@ -7,7 +7,7 @@ from automated_academics.validate import find_conflicts
 
 
 def test_calendar_blocks_respect_break():
-    cal = Calendar(periods_per_day=7, break_after=[3])
+    cal = Calendar(lectures_per_day=7, break_after=[3])
     assert cal.block_fits(2, 2)
     assert not cal.block_fits(3, 2)  # would span lunch
     assert cal.block_fits(4, 3)
@@ -70,7 +70,7 @@ def test_validator_detects_a_clash():
 
 def test_oversubscribed_faculty_is_infeasible():
     inst = sample_institution()
-    # 50 one-period sessions for one faculty member exceed 42 weekly slots
+    # 50 one-lecture sessions for one faculty member exceed 42 weekly slots
     inst.offerings.append(
         Offering(id="O-X", course_code="CS-UG1-T1", faculty_id="CSF1",
                  batch_ids=["CS-UG1"], sessions=[1] * 50)

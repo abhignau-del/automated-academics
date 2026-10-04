@@ -27,7 +27,7 @@ def sess(day, start, length, code="C1", oid="O1"):
 
 # ---------- layout ----------
 
-def test_layout_merges_exclusive_multi_period_sessions_only():
+def test_layout_merges_exclusive_multi_lecture_sessions_only():
     lab, parallel_a, parallel_b = sess(0, 4, 2, oid="A"), sess(1, 4, 2, oid="B"), sess(1, 4, 2, oid="C")
     cover, merge = layout([lab, parallel_a, parallel_b])
     assert merge == [0]  # parallel groups share cells, so they cannot be merged
@@ -71,7 +71,7 @@ def test_xlsx_structure_and_content(solved):
     for s in sessions:
         cell = ws.cell(row=s["start"] + 3, column=s["day"] + 2)
         assert str(cell.value).startswith(s["course_code"]), (s, cell.value)
-    assert ws.merged_cells.ranges  # the multi-period labs are merged
+    assert ws.merged_cells.ranges  # the multi-lecture labs are merged
 
 
 def test_xlsx_parallel_groups_listed_in_one_cell():

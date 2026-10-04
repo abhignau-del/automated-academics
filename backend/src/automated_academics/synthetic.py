@@ -33,8 +33,8 @@ def sample_institution() -> Institution:
                     id=f"{dept}F{n}",
                     name=f"{dept} Faculty {n}",
                     department=dept,
-                    # one fixed day-off period per faculty to exercise availability
-                    unavailable=[Slot(day=n % 6, period=0)],
+                    # one fixed day-off lecture per faculty to exercise availability
+                    unavailable=[Slot(day=n % 6, lecture=0)],
                 )
             )
 

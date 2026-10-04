@@ -61,11 +61,11 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
         fac_load[(off.faculty_id, p.day)] += p.length
         fac_offerings[(off.faculty_id, p.day)].add(p.offering_id)
 
-        blocked = {(s.day, s.period) for s in faculty[off.faculty_id].unavailable}
+        blocked = {(s.day, s.lecture) for s in faculty[off.faculty_id].unavailable}
         for t in range(p.start, p.start + p.length):
             if (p.day, t) in blocked:
                 out.append(Conflict(
-                    f"{tag}: faculty {off.faculty_id} unavailable on day {p.day} period {t}",
+                    f"{tag}: faculty {off.faculty_id} unavailable on day {p.day} lecture {t}",
                     (p.offering_id,)))
             keys = [("F", off.faculty_id), ("R", p.room_id)] + [
                 ("B", b) for b in inst.occupied_batches(off.batch_ids)
@@ -74,11 +74,11 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
                 k = (kind, ident, p.day, t)
                 if k in seen and seen[k] != p.offering_id:
                     out.append(Conflict(
-                        f"clash {kind}:{ident} day {p.day} period {t}: {seen[k]} vs {p.offering_id}",
+                        f"clash {kind}:{ident} day {p.day} lecture {t}: {seen[k]} vs {p.offering_id}",
                         (seen[k], p.offering_id)))
                 elif k in seen:
                     out.append(Conflict(
-                        f"clash {kind}:{ident} day {p.day} period {t}: {p.offering_id} overlaps itself",
+                        f"clash {kind}:{ident} day {p.day} lecture {t}: {p.offering_id} overlaps itself",
                         (p.offering_id,)))
                 seen[k] = p.offering_id
 
@@ -86,8 +86,8 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
         out.append(Conflict(f"unplaced session {key[0]}#{key[1]}", (key[0],)))
 
     for (fid, d), load in fac_load.items():
-        if load > faculty[fid].max_periods_per_day:
-            out.append(Conflict(f"{fid} overloaded on day {d}: {load} periods",
+        if load > faculty[fid].max_lectures_per_day:
+            out.append(Conflict(f"{fid} overloaded on day {d}: {load} lectures",
                                 tuple(sorted(fac_offerings[(fid, d)]))))
     return out
 

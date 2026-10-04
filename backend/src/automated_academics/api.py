@@ -248,6 +248,6 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             sessions = session_views(inst, tt, kind, ident)
         except LookupError:
             raise HTTPException(404, f"{kind} not found") from None
-        return {"kind": kind, "id": ident, "sessions": sessions}  # periods are zero-based
+        return {"kind": kind, "id": ident, "sessions": sessions}  # lectures are zero-based
 
     return app

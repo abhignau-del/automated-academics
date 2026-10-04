@@ -1,12 +1,12 @@
-// Mirrors backend/src/automated_academics/models.py. Periods and days are zero-based.
+// Mirrors backend/src/automated_academics/models.py. Lectures and days are zero-based.
 
 export type RoomKind = "classroom" | "lab" | "hall";
 
-export interface Calendar { day_names: string[]; periods_per_day: number; break_after: number[] }
+export interface Calendar { day_names: string[]; lectures_per_day: number; break_after: number[] }
 export interface Room { id: string; name: string; capacity: number; kind: RoomKind }
 export interface Faculty {
   id: string; name: string; department: string;
-  unavailable: { day: number; period: number }[]; max_periods_per_day: number;
+  unavailable: { day: number; lecture: number }[]; max_lectures_per_day: number;
 }
 export interface Batch {
   id: string; program: string; level: "UG" | "PG"; semester: number; section: string;

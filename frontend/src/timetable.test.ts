@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assignLanes, blockFits, changeRoom, moveSession, occupiedBatches, placementsFor, sessionKey } from "./timetable";
 import type { Calendar, Institution, Placement } from "./types";
 
-const cal: Calendar = { day_names: ["Mon", "Tue", "Wed"], periods_per_day: 7, break_after: [3] };
+const cal: Calendar = { day_names: ["Mon", "Tue", "Wed"], lectures_per_day: 7, break_after: [3] };
 
 const inst = {
   name: "T", calendar: cal, rooms: [], faculty: [], courses: [],
