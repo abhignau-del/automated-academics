@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+node_modules/
+dist/
+.env
+*.db
+*.sqlite3
+
+# Real institutional data must never be committed
+private-data/
