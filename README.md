@@ -40,10 +40,29 @@ tt = solve(inst, time_limit_s=30)
 print(tt.status, len(tt.placements), find_conflicts(inst, tt))
 ```
 
+## Loading your own data from Excel
+
+Start from [docs/institution-template.xlsx](docs/institution-template.xlsx) (fictional sample data)
+and replace the rows with your own. One sheet per entity: `Institution`, `Rooms`, `Faculty`,
+`Batches`, `Courses`, `Offerings`. Periods are numbered from 1 and days are written by name
+(e.g. unavailable = `Mon:1, Tue:3`). A shared elective lists several batches in `batch_ids`;
+a lab sub-group sets `group_of` to its parent batch.
+
+```bash
+python -m automated_academics.cli check my-data.xlsx
+```
+
+The checker reports every problem with its sheet and row, so you can fix the file in one pass.
+
+```python
+from automated_academics.excel_io import import_workbook
+inst = import_workbook("my-data.xlsx")
+```
+
 ## Roadmap
 
 - [x] Domain model, CP-SAT solver, validator, synthetic data
-- [ ] Excel import templates (programs, courses, faculty, rooms, batches)
+- [x] Excel import with row-level validation errors, plus a template workbook
 - [ ] FastAPI service and persistence
 - [ ] React UI: data entry, class / faculty / room views
 - [ ] Drag-and-drop editing with live clash detection
