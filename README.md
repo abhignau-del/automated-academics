@@ -4,8 +4,21 @@ Open-source timetable generator for colleges and universities running UG and PG 
 It models the realities of Indian higher education (CBCS / NEP 2020) and uses a
 constraint solver (Google OR-Tools CP-SAT) to produce clash-free timetables.
 
-> **Status: early development (v0.1).** The solver core and data model work and are tested.
-> The API, Excel import, web UI and exports are on the roadmap below.
+> **Status: v0.1.0, first release.** The full loop works end to end: load an institution from Excel,
+> generate a clash-free timetable, view and edit it in the browser with live clash checking, and
+> export to PDF and Excel. It has been tested on a fictional institution only; see
+> [Known limitations](#known-limitations) before using it with real data.
+
+![Generated timetable for one class, with a session selected](docs/screenshot-timetable.png)
+
+Drag a session to a new slot and the server re-checks clashes as you go; sessions involved turn red
+and the reasons are listed:
+
+![A drag that causes a faculty clash, flagged in red with the reason listed](docs/screenshot-clash-detection.png)
+
+Exports are print-ready (landscape A4, one page per class, faculty member and room):
+
+![PDF export of one class's week](docs/screenshot-pdf-export.png)
 
 ## What it handles today
 
@@ -129,6 +142,22 @@ set AA_PDF_FONT=C:\Windows\Fonts\Nirmala.ttc      # macOS/Linux: export AA_PDF_F
 The API logs a warning if your data needs a font and none is configured. Excel exports are
 unaffected. One font covers one script family; mixed-script institutions may need a broad
 font such as Noto Sans.
+
+## Known limitations
+
+- **Tested on synthetic data only.** Real institutions have rules this does not model yet
+  (see the roadmap). Try it on a copy of your data and check the result before relying on it.
+- **Data comes from Excel.** There is no in-app editing of rooms, faculty or courses yet.
+- **No authentication.** Run it on localhost or behind your own access control.
+- **One solve at a time**, on a single machine, with data in a local SQLite file.
+- **Clash messages are technical** (zero-based day and lecture numbers), and a clash highlights
+  every session of the affected course, not only the clashing one.
+- **Only one soft preference** is optimised so far (not repeating a course twice in a day). Gaps,
+  faculty preferences and balanced days are not yet considered.
+- **PDF and non-Latin text:** set `AA_PDF_FONT` (see above) for Hindi and other Indian scripts.
+- **Breaking data change in v0.1.0:** "period" was renamed "lecture" (`lectures_per_day`,
+  `max_lectures_per_day`, `Slot.lecture`) before release, so any data created earlier must be
+  regenerated from the new template.
 
 ## Roadmap
 
