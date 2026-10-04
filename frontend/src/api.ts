@@ -1,5 +1,5 @@
 import type {
-  ConflictReport, Institution, InstitutionSummary, Job, Timetable, UploadIssue,
+  ConflictReport, Institution, InstitutionSummary, Job, Timetable, UploadIssue, ViewKind,
 } from "./types";
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
@@ -61,6 +61,16 @@ export async function latestJob(iid: string): Promise<Job | null> {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;
   }
+}
+
+/** Download links. Exports are built from the saved timetable, not unsaved edits. */
+export const exportXlsxUrl = (jid: string) => `${API_BASE}/jobs/${jid}/export.xlsx`;
+export function exportPdfUrl(jid: string, kind?: ViewKind, id?: string): string {
+  const q = new URLSearchParams();
+  if (kind) q.set("kind", kind);
+  if (kind && id) q.set("id", id);
+  const qs = q.toString();
+  return `${API_BASE}/jobs/${jid}/export.pdf${qs ? "?" + qs : ""}`;
 }
 
 export const validate = (iid: string, tt: Timetable) =>

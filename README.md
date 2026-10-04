@@ -105,6 +105,31 @@ press **Generate timetable**. Then:
 
 Set `VITE_API_URL` if the API is not on `http://127.0.0.1:8000`. Frontend tests: `npm test`.
 
+## Exporting timetables
+
+Use the **Export** menu in the UI, or the endpoints directly. Exports always use the *saved*
+timetable (the menu asks you to save first), and warn if it still has unresolved clashes.
+
+| Endpoint | Output |
+|---|---|
+| `GET /jobs/{id}/export.pdf` | Landscape A4, one page per class, faculty member and room |
+| `GET /jobs/{id}/export.pdf?kind=batch&id=CS-UG1` | One page for a single class (`kind` is `batch`, `faculty` or `room`; omit `id` for all of that kind) |
+| `GET /jobs/{id}/export.xlsx` | Workbook with an "All sessions" list plus one week grid per class, faculty member and room |
+
+Multi-period labs are merged into one block, and parallel lab groups are listed together in a cell.
+
+**Hindi and other Indian scripts in PDFs.** The built-in PDF fonts only draw Latin text, so
+non-Latin names would print as boxes. Point `AA_PDF_FONT` at a TrueType font that covers your
+script (for example Noto Sans, or `C:\Windows\Fonts\Nirmala.ttc` on Windows) before starting the API:
+
+```bash
+set AA_PDF_FONT=C:\Windows\Fonts\Nirmala.ttc      # macOS/Linux: export AA_PDF_FONT=/path/to/font.ttf
+```
+
+The API logs a warning if your data needs a font and none is configured. Excel exports are
+unaffected. One font covers one script family; mixed-script institutions may need a broad
+font such as Noto Sans.
+
 ## Roadmap
 
 - [x] Domain model, CP-SAT solver, validator, synthetic data
@@ -113,7 +138,7 @@ Set `VITE_API_URL` if the API is not on `http://127.0.0.1:8000`. Frontend tests:
 - [x] React UI: Excel upload, generate, class / faculty / room views
 - [x] Drag-and-drop editing with live clash detection, undo and save
 - [ ] In-app data entry (today data comes from the Excel workbook)
-- [ ] PDF and Excel export
+- [x] PDF and Excel export
 - [ ] More soft constraints: gaps, faculty preferences, balanced days
 
 ## Data and privacy

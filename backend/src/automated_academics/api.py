@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -24,11 +25,13 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .excel_io import ImportErrors, export_workbook, import_workbook
+from .export import build_pdf, build_xlsx
 from .models import Institution, Timetable
 from .solver import InfeasibleError, solve
 from .store import Store
 from .synthetic import sample_institution
 from .validate import find_conflict_details
+from .views import session_views
 
 log = logging.getLogger("automated_academics")
 
@@ -51,6 +54,12 @@ class ConflictReport(BaseModel):
     details: list[ConflictDetail]
 
 
+def _attachment(filename: str) -> dict[str, str]:
+    """Content-Disposition header with a filename safe to embed (ids come from user data)."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", filename)
+    return {"Content-Disposition": f'attachment; filename="{safe}"'}
+
+
 def _report(inst: Institution, tt: Timetable) -> ConflictReport:
     details = find_conflict_details(inst, tt)
     return ConflictReport(
@@ -60,8 +69,11 @@ def _report(inst: Institution, tt: Timetable) -> ConflictReport:
     )
 
 
-def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
+def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None) -> FastAPI:
     store = Store(db_path or os.environ.get("AA_DB", "automated_academics.db"))
+    pdf_font = pdf_font or os.environ.get("AA_PDF_FONT") or None
+    if pdf_font and not os.path.isfile(pdf_font):
+        raise FileNotFoundError(f"AA_PDF_FONT / pdf_font not found: {pdf_font}")
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="solver")
 
     @asynccontextmanager
@@ -191,6 +203,38 @@ def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
         store.save_timetable(jid, tt.model_copy(update={"status": "MANUAL"}))
         return _report(inst, tt)
 
+    def _exportable(jid: str) -> tuple[Institution, Timetable]:
+        job = job_or_404(jid)
+        tt = store.get_timetable(jid)
+        if tt is None:
+            raise HTTPException(409, f"no timetable: job is {job['status']}")
+        return institution_or_404(job["institution_id"]), tt
+
+    @app.get("/jobs/{jid}/export.xlsx")
+    def export_xlsx(jid: str):
+        """Excel workbook: a flat session list plus one week grid per class, faculty member and room."""
+        inst, tt = _exportable(jid)
+        buf = io.BytesIO()
+        build_xlsx(inst, tt, buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type=XLSX, headers=_attachment("timetable.xlsx"))
+
+    @app.get("/jobs/{jid}/export.pdf")
+    def export_pdf(jid: str, kind: Literal["batch", "faculty", "room"] | None = None, id: str | None = None):
+        """PDF, one landscape page per entity. Without `kind` everything is exported;
+        with `kind` and `id`, just that class, faculty member or room."""
+        if id is not None and kind is None:
+            raise HTTPException(422, "`id` requires `kind`")
+        inst, tt = _exportable(jid)
+        buf = io.BytesIO()
+        try:
+            build_pdf(inst, tt, buf, kind, id, font_path=pdf_font)
+        except LookupError:
+            raise HTTPException(404, f"{kind} not found") from None
+        buf.seek(0)
+        name = "timetable" + (f"-{kind}" if kind else "") + (f"-{id}" if id else "") + ".pdf"
+        return StreamingResponse(buf, media_type="application/pdf", headers=_attachment(name))
+
     @app.get("/jobs/{jid}/views/{kind}/{ident}")
     def view(jid: str, kind: Literal["batch", "faculty", "room"], ident: str):
         """One batch's, faculty member's or room's week, with names resolved for display."""
@@ -200,39 +244,10 @@ def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
         if tt is None:
             raise HTTPException(409, f"no timetable: job is {job['status']}")
 
-        offerings = {o.id: o for o in inst.offerings}
-        courses = {c.code: c for c in inst.courses}
-        faculty = {f.id: f for f in inst.faculty}
-        rooms = {r.id: r for r in inst.rooms}
-        batches = {b.id: b for b in inst.batches}
-        known = {"batch": batches, "faculty": faculty, "room": rooms}[kind]
-        if ident not in known:
-            raise HTTPException(404, f"{kind} not found")
-
-        def relevant(p) -> bool:
-            o = offerings[p.offering_id]
-            if kind == "faculty":
-                return o.faculty_id == ident
-            if kind == "room":
-                return p.room_id == ident
-            # a section sees its own sessions, its sub-groups' labs, and a sub-group sees its parent's
-            return ident in inst.occupied_batches(o.batch_ids) or any(
-                batches[b].group_of == ident for b in o.batch_ids)
-
-        cal = inst.calendar
-        out = []
-        for p in sorted(tt.placements, key=lambda p: (p.day, p.start)):
-            if not relevant(p):
-                continue
-            o = offerings[p.offering_id]
-            out.append({
-                "offering_id": o.id, "session_index": p.session_index,
-                "course_code": o.course_code, "course_name": courses[o.course_code].name,
-                "faculty_id": o.faculty_id, "faculty_name": faculty[o.faculty_id].name,
-                "batch_ids": o.batch_ids, "room_id": p.room_id, "room_name": rooms[p.room_id].name,
-                "day": p.day, "day_name": cal.day_names[p.day],
-                "start": p.start, "length": p.length,  # zero-based periods
-            })
-        return {"kind": kind, "id": ident, "sessions": out}
+        try:
+            sessions = session_views(inst, tt, kind, ident)
+        except LookupError:
+            raise HTTPException(404, f"{kind} not found") from None
+        return {"kind": kind, "id": ident, "sessions": sessions}  # periods are zero-based
 
     return app

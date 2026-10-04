@@ -28,6 +28,15 @@ export default function App() {
   const [kind, setKind] = useState<ViewKind>("batch");
   const [viewId, setViewId] = useState<string>("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpen]);
 
   const epoch = useRef(0); // bumps when the institution changes, to drop stale async results
   const dirty = !sameList(placements, saved);
@@ -230,6 +239,33 @@ export default function App() {
                   <button className="btn" onClick={undo} disabled={!history.length}>Undo</button>
                   <button className="btn" onClick={() => { setPlacements(saved); setHistory([]); }} disabled={!dirty}>Revert</button>
                   <button className="btn primary" onClick={onSave} disabled={!dirty}>{dirty ? "Save changes" : "Saved"}</button>
+                  <div className="menu" ref={menuRef} onKeyDown={(e) => { if (e.key === "Escape") setMenuOpen(false); }}>
+                    <button className="btn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+                      Export ▾
+                    </button>
+                    {menuOpen && (
+                      <div className="menu-list" role="menu">
+                        {dirty ? (
+                          <p className="muted">Save your changes first. Exports use the saved timetable.</p>
+                        ) : (
+                          <>
+                            {report && !report.ok && (
+                              <p className="warn">⚠ This timetable still has {report.details.length} unresolved problem{report.details.length === 1 ? "" : "s"}.</p>
+                            )}
+                            <a role="menuitem" href={api.exportPdfUrl(jobId, kind, viewId)} onClick={() => setMenuOpen(false)}>
+                              PDF: this {kind === "batch" ? "class" : kind}
+                            </a>
+                            <a role="menuitem" href={api.exportPdfUrl(jobId, "batch")} onClick={() => setMenuOpen(false)}>PDF: all classes</a>
+                            <a role="menuitem" href={api.exportPdfUrl(jobId, "faculty")} onClick={() => setMenuOpen(false)}>PDF: all faculty</a>
+                            <a role="menuitem" href={api.exportPdfUrl(jobId, "room")} onClick={() => setMenuOpen(false)}>PDF: all rooms</a>
+                            <a role="menuitem" href={api.exportPdfUrl(jobId)} onClick={() => setMenuOpen(false)}>PDF: everything</a>
+                            <hr />
+                            <a role="menuitem" href={api.exportXlsxUrl(jobId)} onClick={() => setMenuOpen(false)}>Excel workbook (all sheets)</a>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <p className="hint">Drag a session to a new slot. Clashes are checked as you go; sessions involved turn red.</p>
