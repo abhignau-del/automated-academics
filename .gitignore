@@ -10,5 +10,7 @@ dist/
 *.db
 *.sqlite3
 
+.claude/
+
 # Real institutional data must never be committed
 private-data/

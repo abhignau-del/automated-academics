@@ -1,0 +1,41 @@
+// Mirrors backend/src/automated_academics/models.py. Periods and days are zero-based.
+
+export type RoomKind = "classroom" | "lab" | "hall";
+
+export interface Calendar { day_names: string[]; periods_per_day: number; break_after: number[] }
+export interface Room { id: string; name: string; capacity: number; kind: RoomKind }
+export interface Faculty {
+  id: string; name: string; department: string;
+  unavailable: { day: number; period: number }[]; max_periods_per_day: number;
+}
+export interface Batch {
+  id: string; program: string; level: "UG" | "PG"; semester: number; section: string;
+  department: string; strength: number; group_of: string | null;
+}
+export interface Course {
+  code: string; name: string; department: string; credits: number; category: string; room_kind: RoomKind;
+}
+export interface Offering { id: string; course_code: string; faculty_id: string; batch_ids: string[]; sessions: number[] }
+
+export interface Institution {
+  name: string; calendar: Calendar; rooms: Room[]; faculty: Faculty[];
+  batches: Batch[]; courses: Course[]; offerings: Offering[];
+}
+
+export interface Placement {
+  offering_id: string; session_index: number; day: number; start: number; length: number; room_id: string;
+}
+export interface Timetable { placements: Placement[]; status: string; penalty: number }
+
+export interface InstitutionSummary { id: string; name: string; created_at: string }
+export interface Job {
+  id: string; institution_id: string; status: "queued" | "running" | "done" | "failed";
+  error: string | null;
+}
+
+export interface ConflictDetail { message: string; offering_ids: string[] }
+export interface ConflictReport { ok: boolean; conflicts: string[]; details: ConflictDetail[] }
+
+export interface UploadIssue { sheet: string; row: number | null; message: string }
+
+export type ViewKind = "batch" | "faculty" | "room";

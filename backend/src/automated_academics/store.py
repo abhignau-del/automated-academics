@@ -87,6 +87,18 @@ class Store:
             c.execute("UPDATE jobs SET status='done', finished_at=?, timetable=? WHERE id=?",
                       (_now(), tt.model_dump_json(), jid))
 
+    def save_timetable(self, jid: str, tt: Timetable) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE jobs SET timetable=? WHERE id=?", (tt.model_dump_json(), jid))
+
+    def latest_done_job(self, institution_id: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT id, institution_id, status, time_limit_s, created_at, finished_at, error "
+                "FROM jobs WHERE institution_id=? AND status='done' "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1", (institution_id,)).fetchone()
+        return dict(row) if row else None
+
     def fail_job(self, jid: str, error: str) -> None:
         with self._conn() as c:
             c.execute("UPDATE jobs SET status='failed', finished_at=?, error=? WHERE id=?",

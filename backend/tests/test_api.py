@@ -63,12 +63,13 @@ def test_upload_solve_and_view(client, xlsx_bytes):
 
     # a solver result must pass the independent validator
     check = client.post(f"/institutions/{iid}/validate", json=tt).json()
-    assert check == {"ok": True, "conflicts": []}
+    assert check == {"ok": True, "conflicts": [], "details": []}
 
-    # a hand-edit that creates a clash is reported
+    # a hand-edit that creates a clash is reported, naming the offerings involved
     tt["placements"][1].update({k: tt["placements"][0][k] for k in ("day", "start", "room_id")})
     bad = client.post(f"/institutions/{iid}/validate", json=tt).json()
     assert bad["ok"] is False and bad["conflicts"]
+    assert any(tt["placements"][1]["offering_id"] in d["offering_ids"] for d in bad["details"])
 
     v = client.get(f"/jobs/{jid}/views/batch/MG-UG1").json()
     assert v["sessions"] and all("course_name" in s and "day_name" in s for s in v["sessions"])
@@ -79,6 +80,48 @@ def test_upload_solve_and_view(client, xlsx_bytes):
     assert client.get(f"/jobs/{jid}/views/faculty/CSF1").status_code == 200
     assert client.get(f"/jobs/{jid}/views/room/L1").status_code == 200
     assert client.get(f"/jobs/{jid}/views/room/NOPE").status_code == 404
+
+
+def test_save_edit_and_reload_latest(client, xlsx_bytes):
+    iid = upload(client, xlsx_bytes).json()["id"]
+    assert client.get(f"/institutions/{iid}/latest-job").status_code == 404
+    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 20}).json()["job_id"]
+    assert wait(client, jid)["status"] == "done"
+    assert client.get(f"/institutions/{iid}/latest-job").json()["id"] == jid
+
+    tt = client.get(f"/jobs/{jid}/timetable").json()
+    first = tt["placements"][0]
+    first["day"], first["start"] = (first["day"] + 1) % 6, 0 if first["length"] == 1 else 4
+    report = client.put(f"/jobs/{jid}/timetable", json=tt).json()
+    assert set(report) == {"ok", "conflicts", "details"}
+    saved = client.get(f"/jobs/{jid}/timetable").json()
+    assert saved["status"] == "MANUAL"
+    assert (saved["placements"][0]["day"], saved["placements"][0]["start"]) == (first["day"], first["start"])
+
+
+def test_cannot_save_into_missing_or_failed_job(client):
+    empty = {"placements": [], "status": "x"}
+    assert client.put("/jobs/nope/timetable", json=empty).status_code == 404
+
+    inst = sample_institution()
+    inst.rooms = [r for r in inst.rooms if r.kind.value != "lab"]  # forces a failed job
+    iid = client.post("/institutions", json=inst.model_dump(mode="json")).json()["id"]
+    jid = client.post(f"/institutions/{iid}/solve").json()["job_id"]
+    assert wait(client, jid)["status"] == "failed"
+    assert client.put(f"/jobs/{jid}/timetable", json=empty).status_code == 409
+
+
+def test_malformed_edits_are_reported_not_crashed(client, xlsx_bytes):
+    iid = upload(client, xlsx_bytes).json()["id"]
+    bad = {"status": "x", "placements": [
+        {"offering_id": "GHOST", "session_index": 0, "day": 0, "start": 0, "length": 1, "room_id": "C1"},
+        {"offering_id": "O-MDC101", "session_index": 0, "day": 99, "start": 0, "length": 1, "room_id": "C1"},
+        {"offering_id": "O-MDC101", "session_index": 0, "day": 0, "start": 0, "length": 1, "room_id": "ZZ"},
+    ]}
+    r = client.post(f"/institutions/{iid}/validate", json=bad)
+    assert r.status_code == 200
+    text = " ".join(r.json()["conflicts"])
+    assert "unknown offering GHOST" in text and "outside the week" in text and "unknown room ZZ" in text
 
 
 def test_upload_reports_row_level_problems(client, xlsx_bytes, tmp_path):

@@ -80,16 +80,39 @@ Interactive docs at <http://127.0.0.1:8000/docs>. Data is kept in a local SQLite
 | `GET /jobs/{id}/views/{batch\|faculty\|room}/{id}` | One class's, teacher's or room's week with names resolved |
 | `POST /institutions/{id}/validate` | Check a hand-edited timetable for clashes |
 
+`PUT /jobs/{id}/timetable` saves a hand-edited timetable (clashes are reported but do not block
+saving), and `GET /institutions/{id}/latest-job` finds the newest finished timetable.
+
 Periods in API responses are zero-based. There is **no authentication yet**: run it on localhost
 or behind your own access control, not directly on the public internet.
+
+## Running the web UI
+
+Requires Node.js 20+. In two terminals:
+
+```bash
+cd backend  && uvicorn automated_academics.api:create_app --factory --reload   # API on :8000
+cd frontend && npm install && npm run dev                                      # UI on :5173
+```
+
+Open <http://localhost:5173>, upload your workbook (or the template), select the institution and
+press **Generate timetable**. Then:
+
+- switch between **Class**, **Faculty** and **Room** weeks
+- **drag a session** to another slot; the server re-checks clashes after every change and sessions
+  involved turn red, with the reasons listed under *Problems*
+- change a session's room from the side panel, **Undo**, **Revert**, and **Save changes**
+
+Set `VITE_API_URL` if the API is not on `http://127.0.0.1:8000`. Frontend tests: `npm test`.
 
 ## Roadmap
 
 - [x] Domain model, CP-SAT solver, validator, synthetic data
 - [x] Excel import with row-level validation errors, plus a template workbook
 - [x] FastAPI service with SQLite persistence and background solving
-- [ ] React UI: data entry, class / faculty / room views
-- [ ] Drag-and-drop editing with live clash detection
+- [x] React UI: Excel upload, generate, class / faculty / room views
+- [x] Drag-and-drop editing with live clash detection, undo and save
+- [ ] In-app data entry (today data comes from the Excel workbook)
 - [ ] PDF and Excel export
 - [ ] More soft constraints: gaps, faculty preferences, balanced days
 

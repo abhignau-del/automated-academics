@@ -28,7 +28,7 @@ from .models import Institution, Timetable
 from .solver import InfeasibleError, solve
 from .store import Store
 from .synthetic import sample_institution
-from .validate import find_conflicts
+from .validate import find_conflict_details
 
 log = logging.getLogger("automated_academics")
 
@@ -40,9 +40,24 @@ class SolveRequest(BaseModel):
     time_limit_s: float = Field(default=30, ge=1, le=300)
 
 
+class ConflictDetail(BaseModel):
+    message: str
+    offering_ids: list[str]
+
+
 class ConflictReport(BaseModel):
     ok: bool
     conflicts: list[str]
+    details: list[ConflictDetail]
+
+
+def _report(inst: Institution, tt: Timetable) -> ConflictReport:
+    details = find_conflict_details(inst, tt)
+    return ConflictReport(
+        ok=not details,
+        conflicts=[d.message for d in details],
+        details=[ConflictDetail(message=d.message, offering_ids=list(d.offering_ids)) for d in details],
+    )
 
 
 def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
@@ -142,8 +157,15 @@ def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
     @app.post("/institutions/{iid}/validate", response_model=ConflictReport)
     def validate_timetable(iid: str, tt: Timetable):
         """Check a (possibly hand-edited) timetable; the basis for live clash detection."""
-        conflicts = find_conflicts(institution_or_404(iid), tt)
-        return ConflictReport(ok=not conflicts, conflicts=conflicts)
+        return _report(institution_or_404(iid), tt)
+
+    @app.get("/institutions/{iid}/latest-job")
+    def latest_job(iid: str):
+        institution_or_404(iid)
+        job = store.latest_done_job(iid)
+        if job is None:
+            raise HTTPException(404, "no finished timetable for this institution yet")
+        return job
 
     # ---------------- jobs and timetables ----------------
     @app.get("/jobs/{jid}")
@@ -158,6 +180,16 @@ def create_app(db_path: str | None = None, workers: int = 1) -> FastAPI:
             raise HTTPException(409, f"no timetable: job is {job['status']}"
                                 + (f" ({job['error']})" if job["error"] else ""))
         return tt
+
+    @app.put("/jobs/{jid}/timetable", response_model=ConflictReport)
+    def save_timetable(jid: str, tt: Timetable):
+        """Save a hand-edited timetable. Clashes are reported but do not block saving."""
+        job = job_or_404(jid)
+        if store.get_timetable(jid) is None:
+            raise HTTPException(409, f"job is {job['status']}; only finished jobs can be edited")
+        inst = institution_or_404(job["institution_id"])
+        store.save_timetable(jid, tt.model_copy(update={"status": "MANUAL"}))
+        return _report(inst, tt)
 
     @app.get("/jobs/{jid}/views/{kind}/{ident}")
     def view(jid: str, kind: Literal["batch", "faculty", "room"], ident: str):
