@@ -59,11 +59,35 @@ from automated_academics.excel_io import import_workbook
 inst = import_workbook("my-data.xlsx")
 ```
 
+## Running the API
+
+```bash
+cd backend
+uvicorn automated_academics.api:create_app --factory --reload
+```
+
+Interactive docs at <http://127.0.0.1:8000/docs>. Data is kept in a local SQLite file
+(`automated_academics.db`, override with the `AA_DB` environment variable).
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /institutions/template` | Download the Excel template |
+| `POST /institutions/upload` | Upload a workbook. Returns `201` with an id, or `422` listing every sheet/row problem |
+| `POST /institutions` | Create from JSON; `GET /institutions`, `GET /institutions/{id}` |
+| `POST /institutions/{id}/solve` | Start a background solve (`time_limit_s` 1-300); returns a `job_id` |
+| `GET /jobs/{id}` | Poll status: `queued`, `running`, `done` or `failed` (with `error`) |
+| `GET /jobs/{id}/timetable` | The generated timetable |
+| `GET /jobs/{id}/views/{batch\|faculty\|room}/{id}` | One class's, teacher's or room's week with names resolved |
+| `POST /institutions/{id}/validate` | Check a hand-edited timetable for clashes |
+
+Periods in API responses are zero-based. There is **no authentication yet**: run it on localhost
+or behind your own access control, not directly on the public internet.
+
 ## Roadmap
 
 - [x] Domain model, CP-SAT solver, validator, synthetic data
 - [x] Excel import with row-level validation errors, plus a template workbook
-- [ ] FastAPI service and persistence
+- [x] FastAPI service with SQLite persistence and background solving
 - [ ] React UI: data entry, class / faculty / room views
 - [ ] Drag-and-drop editing with live clash detection
 - [ ] PDF and Excel export

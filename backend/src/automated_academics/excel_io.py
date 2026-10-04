@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -155,7 +155,7 @@ def _calendar(ws, issues: list[ImportIssue]) -> tuple[str, Calendar]:
         return name, Calendar()
 
 
-def import_workbook(path: str | Path) -> Institution:
+def import_workbook(path: str | Path | BinaryIO) -> Institution:
     wb = load_workbook(path, data_only=True)
     issues: list[ImportIssue] = []
 
@@ -247,7 +247,7 @@ def _dropdown(ws, header: str, options: list[str]) -> None:
     dv.add(f"{letter}2:{letter}1000")
 
 
-def export_workbook(inst: Institution, path: str | Path) -> None:
+def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     """Write an Institution as a workbook the importer can read back."""
     cal = inst.calendar
     wb = Workbook()
