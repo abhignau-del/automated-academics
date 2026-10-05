@@ -121,6 +121,19 @@ class Offering(BaseModel):
         return self
 
 
+class Pin(BaseModel):
+    """A session fixed in place: the solver must put it here and schedules everything else around it.
+
+    Lectures and days are zero-based, like everywhere else in the data.
+    """
+
+    offering_id: str
+    session_index: int = Field(ge=0)
+    day: int = Field(ge=0)
+    start: int = Field(ge=0)
+    room_id: str | None = None  # None leaves the room to the solver
+
+
 class Institution(BaseModel):
     name: str
     calendar: Calendar = Calendar()
@@ -130,9 +143,19 @@ class Institution(BaseModel):
     courses: list[Course]
     offerings: list[Offering]
     weights: Weights = Weights()
+    pins: list[Pin] = []
 
     @model_validator(mode="after")
     def _references_exist(self) -> "Institution":
+        offering_sessions = {o.id: len(o.sessions) for o in self.offerings}
+        room_ids = {r.id for r in self.rooms}
+        for p in self.pins:
+            if p.offering_id not in offering_sessions:
+                raise ValueError(f"pin: unknown offering {p.offering_id}")
+            if p.session_index >= offering_sessions[p.offering_id]:
+                raise ValueError(f"pin: {p.offering_id} has no session {p.session_index + 1}")
+            if p.room_id is not None and p.room_id not in room_ids:
+                raise ValueError(f"pin: unknown room {p.room_id}")
         faculty = {f.id for f in self.faculty}
         batches = {b.id for b in self.batches}
         courses = {c.code for c in self.courses}

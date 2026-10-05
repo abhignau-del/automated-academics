@@ -40,6 +40,7 @@ from .models import (
     Institution,
     Level,
     Offering,
+    Pin,
     Room,
     RoomKind,
     Slot,
@@ -54,6 +55,9 @@ SHEETS: dict[str, list[str]] = {
     "Courses": ["code", "name", "department", "credits", "category", "room_kind"],
     "Offerings": ["id", "course_code", "faculty_id", "batch_ids", "sessions"],
 }
+# Optional: a workbook without this sheet (made before pins existed) imports as having no pins.
+PINS_SHEET = "Pins"
+PINS_COLUMNS = ["offering_id", "session", "day", "lecture", "room"]
 REQUIRED: dict[str, set[str]] = {
     "Rooms": {"id", "name", "capacity"},
     "Faculty": {"id", "name", "department"},
@@ -221,6 +225,29 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
         batch_ids=_split(r["batch_ids"]),
         sessions=[_int(s, "sessions") for s in _split(r["sessions"])]))
 
+    pins: list[Pin] = []
+    if PINS_SHEET in wb.sheetnames:
+        ws = wb[PINS_SHEET]
+        head = [_text(c).lower() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), [])]
+        missing = {"offering_id", "session", "day", "lecture"} - set(head)
+        if missing:
+            issues.append(ImportIssue(PINS_SHEET, 1, f"missing column(s): {', '.join(sorted(missing))}"))
+        else:
+            for n, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                if all(_text(c) == "" for c in row):
+                    continue
+                rec = dict(zip(head, row))
+                try:
+                    day = day_index.get(_text(rec["day"]).lower())
+                    if day is None:
+                        raise ValueError(f"day {_text(rec['day'])!r} is not one of {', '.join(cal.day_names)}")
+                    pins.append(Pin(offering_id=_text(rec["offering_id"]), session_index=_int(rec["session"], "session") - 1,
+                                    day=day, start=_int(rec["lecture"], "lecture") - 1,
+                                    room_id=_text(rec.get("room")) or None))
+                except (ValueError, ValidationError) as e:
+                    msg = "; ".join(err["msg"] for err in e.errors()) if isinstance(e, ValidationError) else str(e)
+                    issues.append(ImportIssue(PINS_SHEET, n, msg))
+
     for sheet, items, key in [("Rooms", rooms, "id"), ("Faculty", faculty, "id"),
                               ("Batches", batches, "id"), ("Courses", courses, "code"),
                               ("Offerings", offerings, "id")]:
@@ -235,7 +262,7 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
         raise ImportErrors(issues)
     try:
         return Institution(name=name, calendar=cal, rooms=rooms, faculty=faculty, batches=batches,
-                           courses=courses, offerings=offerings, weights=weights)
+                           courses=courses, offerings=offerings, weights=weights, pins=pins)
     except ValidationError as e:  # cross-sheet references
         raise ImportErrors([ImportIssue("Offerings/Batches", None, err["msg"].removeprefix("Value error, "))
                             for err in e.errors()]) from None
@@ -300,6 +327,13 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
                       for c in inst.courses])
     sheet("Offerings", [[o.id, o.course_code, o.faculty_id, ", ".join(o.batch_ids),
                          ", ".join(str(s) for s in o.sessions)] for o in inst.offerings])
+
+    pin_sheet = wb.create_sheet(PINS_SHEET)
+    pin_sheet.append(PINS_COLUMNS)
+    for p in inst.pins:
+        pin_sheet.append([p.offering_id, p.session_index + 1, cal.day_names[p.day] if p.day < cal.days else p.day + 1,
+                          p.start + 1, p.room_id or ""])
+    _style(pin_sheet)
 
     _dropdown(wb["Rooms"], "kind", [k.value for k in RoomKind])
     _dropdown(wb["Courses"], "room_kind", [k.value for k in RoomKind])

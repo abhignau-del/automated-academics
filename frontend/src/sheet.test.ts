@@ -31,6 +31,7 @@ const base = (): Institution => ({
     { id: "O3", course_code: "C1", faculty_id: "F1", batch_ids: ["S", "T"], sessions: [1, 1] },
   ],
   weights: { repeat_course_day: 5, batch_gaps: 10, faculty_gaps: 3, peak_day_load: 4, avoid_slot: 6 },
+  pins: [],
 });
 
 describe("parseTSV", () => {

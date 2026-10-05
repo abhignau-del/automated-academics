@@ -9,6 +9,7 @@ interface Props {
   items: Placement[];
   kind: ViewKind;
   conflictOfferings: Set<string>;
+  pinned: Set<string>; // sessions fixed in place; they can't be dragged
   selected: string | null;
   onSelect: (key: string | null) => void;
   onMove: (key: string, day: number, start: number) => void;
@@ -16,7 +17,7 @@ interface Props {
 
 interface Hover { day: number; start: number; length: number; ok: boolean }
 
-export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect, onMove }: Props) {
+export function Grid({ inst, items, kind, conflictOfferings, pinned, selected, onSelect, onMove }: Props) {
   const cal = inst.calendar;
   const drag = useRef<{ key: string; grab: number; length: number } | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -106,13 +107,15 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
             const cls = ["card"];
             if (selected === key) cls.push("selected");
             if (conflictOfferings.has(p.offering_id)) cls.push("conflict");
+            const locked = pinned.has(key);
+            if (locked) cls.push("locked");
             return (
               <div
                 key={key}
                 className={cls.join(" ")}
                 role="button"
                 tabIndex={0}
-                draggable
+                draggable={!locked}
                 title={`${info.name}\n${info.lines.join(" · ")}`}
                 style={{
                   top: p.start * ROW_H, height: p.length * ROW_H - 2,
@@ -130,7 +133,7 @@ export function Grid({ inst, items, kind, conflictOfferings, selected, onSelect,
                 }}
                 onDragEnd={() => { drag.current = null; setHover(null); }}
               >
-                <strong>{info.code}</strong>
+                <strong>{locked && <span aria-label="locked" role="img">🔒 </span>}{info.code}</strong>
                 <span>{info.name}</span>
                 {info.lines.map((l, i) => <em key={i}>{l}</em>)}
               </div>

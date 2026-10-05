@@ -151,6 +151,17 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .pastepreview { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .pastepreview p { margin: 4px 0; }
+.modal-card.wide { width: min(900px, 100%); }
+.modal-actions.left { justify-content: flex-start; }
+.importrow { display: flex; align-items: center; gap: 10px; }
+.importform { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px 12px; }
+.importform label, .namefield { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.importform input, .namefield input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.importreport { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+.importreport ul { margin: 4px 0 4px 18px; padding: 0; }
+.importreport summary { cursor: pointer; }
+.warnline { color: #b26a00; }
+@media (max-width: 800px) { .importform { grid-template-columns: repeat(2, 1fr); } }
 .menu-list.left { left: 0; right: auto; }
 .menu-list button { text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: none; cursor: pointer; color: var(--text); }
 .menu-list button:hover { background: var(--bg); }
@@ -182,5 +193,11 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .card.selected { outline: 2px solid var(--accent); z-index: 2; }
 .card.conflict { border: 2px solid var(--bad); box-shadow: 0 0 0 2px rgba(198, 40, 40, .25); }
 .card:active { cursor: grabbing; }
+.card.locked { cursor: default; border: 2px dashed rgba(0, 0, 0, .55); }
+.alert { white-space: pre-line; }
+.pinlist { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.pinlist li { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border: 1px solid var(--line, #ccc); border-radius: 6px; }
+.pinlist li.bad { border-color: var(--bad); }
+.pinlist .spacer { flex: 1; }
 .ghost { position: absolute; left: 2px; right: 2px; border-radius: 6px; background: rgba(46, 125, 50, .22); border: 2px dashed var(--good); pointer-events: none; z-index: 1; }
 .ghost.bad { background: rgba(198, 40, 40, .2); border-color: var(--bad); }

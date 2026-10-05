@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (real-data workflow)
+
+- **Import a workload list** (New ▾ → Import a workload list…): the flat "subject, teacher, programme, hours
+  per week" sheet many colleges already keep becomes a full institution. Headings are matched by name, classes
+  are built from programme + semester, and classes taught together (same subject and teacher across
+  programmes) can be combined up to a size you choose. Everything the importer had to assume (rooms, seats,
+  student counts, lab or not) is listed in a report before anything is saved.
+- **Lock sessions in place.** Select a session in the timetable and choose Lock in place (or Lock all shown);
+  it keeps its day, lecture and room when you regenerate. Locked sessions are listed in the Data tab's
+  **Locked** tab and are stored in the workbook (an optional Pins sheet; older workbooks still import).
+  Locking does not make the existing timetable out of date, since it only steers the next Generate.
+- **Why it failed.** When no timetable exists, the message now names the smallest set of your own rules that
+  cannot hold together (for example "Teacher A and Teacher B are both free only at lecture 2, for the same
+  class"), or says the data itself is impossible and lists why. New checks catch pins that cannot fit, and
+  rooms whose total demand exceeds their slots.
+- Tests: 21 workload-import tests, 14 pin and explanation tests, an API test, and a browser journey covering
+  lock, regenerate, unlock and the failure message.
+
 ## Unreleased (spreadsheet-style editing)
 
 - **Paste from Excel / Google Sheets**, into the cells (fills down and across, adds rows as needed) or via

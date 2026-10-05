@@ -78,6 +78,12 @@ export function renameId(inst: Institution, table: TableKey, oldId: string, newI
       r[field] === oldId ? { ...r, [field]: newId } : r),
   } as Institution;
 
+  if (table === "offerings") {
+    return { ...renamed, pins: renamed.pins.map((p) => ({ ...p, offering_id: swap(p.offering_id) })) };
+  }
+  if (table === "rooms") {
+    return { ...renamed, pins: renamed.pins.map((p) => ({ ...p, room_id: p.room_id === null ? null : swap(p.room_id) })) };
+  }
   if (table === "faculty") {
     return { ...renamed, offerings: renamed.offerings.map((o) => ({ ...o, faculty_id: swap(o.faculty_id) })) };
   }
@@ -141,7 +147,13 @@ export function removeRow(inst: Institution, table: TableKey, index: number): In
       offerings: out.offerings.map((o) => (o.batch_ids.includes(id) ? { ...o, batch_ids: o.batch_ids.filter((b) => b !== id) } : o)),
     };
   }
-  return out;
+  // a pin cannot outlive its offering; one pointing at a removed room just stops choosing the room
+  const alive = new Set(out.offerings.map((o) => o.id));
+  const rooms = new Set(out.rooms.map((r) => r.id));
+  return {
+    ...out,
+    pins: out.pins.filter((p) => alive.has(p.offering_id)).map((p) => (p.room_id !== null && !rooms.has(p.room_id) ? { ...p, room_id: null } : p)),
+  };
 }
 
 // ---------------------------------------------------------------- sessions text

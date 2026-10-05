@@ -25,9 +25,12 @@ export interface Weights {
   repeat_course_day: number; batch_gaps: number; faculty_gaps: number; peak_day_load: number; avoid_slot: number;
 }
 
+/** A session fixed in place: the solver keeps it here and plans everything else around it. */
+export interface Pin { offering_id: string; session_index: number; day: number; start: number; room_id: string | null }
+
 export interface Institution {
   name: string; calendar: Calendar; rooms: Room[]; faculty: Faculty[];
-  batches: Batch[]; courses: Course[]; offerings: Offering[]; weights: Weights;
+  batches: Batch[]; courses: Course[]; offerings: Offering[]; weights: Weights; pins: Pin[];
 }
 
 export interface Placement {
@@ -62,7 +65,7 @@ export type ViewKind = "batch" | "faculty" | "room";
 // ---- data entry ----
 
 /** The parts of the data the editor shows as separate tabs. */
-export type Section = "settings" | "rooms" | "faculty" | "batches" | "courses" | "offerings";
+export type Section = "settings" | "rooms" | "faculty" | "batches" | "courses" | "offerings" | "pins";
 
 /** A problem or note about entered data, located by section and row so the editor can highlight it. */
 export interface DataIssue {

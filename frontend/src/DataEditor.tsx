@@ -17,6 +17,7 @@ const TABS: { key: Section; label: string }[] = [
   { key: "batches", label: "Classes" },
   { key: "courses", label: "Courses" },
   { key: "offerings", label: "Offerings" },
+  { key: "pins", label: "Locked" },
 ];
 const TABLES: TableKey[] = ["rooms", "faculty", "batches", "courses", "offerings"];
 const NOUN: Record<TableKey, { one: string; many: string; add: string }> = {
@@ -750,7 +751,31 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
         </div>
       )}
 
-      {tab !== "settings" && tableView(tab as TableKey)}
+      {tab === "pins" && (
+        <div className="pins">
+          <p className="muted">Locked sessions stay exactly where they are when you generate a timetable. Lock them from the Timetable tab (select a session, then Lock in place).</p>
+          {draft.pins.length === 0 && <p>Nothing is locked.</p>}
+          <ul className="pinlist">
+            {draft.pins.map((pin, i) => {
+              const off = draft.offerings.find((o) => o.id === pin.offering_id);
+              const course = draft.courses.find((c) => c.code === off?.course_code)?.name ?? off?.course_code ?? pin.offering_id;
+              const room = draft.rooms.find((r) => r.id === pin.room_id)?.name;
+              const problems = inSection("pins").filter((x) => x.index === i);
+              return (
+                <li key={`${pin.offering_id}#${pin.session_index}`} className={problems.some((x) => x.level === "error") ? "bad" : ""}>
+                  <span>🔒 <b>{course}</b> ({pin.offering_id}) session {pin.session_index + 1}: {draft.calendar.day_names[pin.day] ?? `day ${pin.day + 1}`} L{pin.start + 1}{room ? `, ${room}` : ""}</span>
+                  {problems.map((x, k) => <small key={k} className={x.level}>{x.message}</small>)}
+                  <span className="spacer" />
+                  <button className="btn" onClick={() => setDraft({ ...draft, pins: draft.pins.filter((_, j) => j !== i) })}>Unlock</button>
+                </li>
+              );
+            })}
+          </ul>
+          {draft.pins.length > 1 && <button className="btn" onClick={() => setDraft({ ...draft, pins: [] })}>Unlock all</button>}
+        </div>
+      )}
+
+      {tab !== "settings" && tab !== "pins" && tableView(tab as TableKey)}
 
       {pasting && (
         <PasteDialog table={pasting} title={NOUN[pasting].many} inst={draft}

@@ -28,6 +28,7 @@ const base = (): Institution => ({
     { id: "O3", course_code: "C1", faculty_id: "F1", batch_ids: ["S", "T"], sessions: [1, 1] }, // shared
   ],
   weights: { repeat_course_day: 5, batch_gaps: 10, faculty_gaps: 3, peak_day_load: 4, avoid_slot: 6 },
+  pins: [],
 });
 
 describe("uniqueId", () => {
@@ -196,5 +197,30 @@ describe("availability slots", () => {
     const cleared = setSlots(allBlocked, col, "free");
     expect(cleared.unavailable).toEqual([]);
     expect(cleared.avoid).toEqual([]);
+  });
+});
+
+describe("pins follow the data they refer to", () => {
+  const pinned = (): Institution => ({
+    ...base(),
+    pins: [
+      { offering_id: "O1", session_index: 0, day: 0, start: 0, room_id: "R1" },
+      { offering_id: "O2", session_index: 0, day: 1, start: 0, room_id: null },
+    ],
+  });
+
+  it("renaming an offering or a room updates its pins", () => {
+    expect(renameId(pinned(), "offerings", "O1", "X1").pins.map((p) => p.offering_id)).toEqual(["X1", "O2"]);
+    expect(renameId(pinned(), "rooms", "R1", "Z").pins.map((p) => p.room_id)).toEqual(["Z", null]);
+  });
+
+  it("deleting an offering (directly or through its teacher) drops its pins", () => {
+    expect(removeRow(pinned(), "offerings", 0).pins.map((p) => p.offering_id)).toEqual(["O2"]);
+    expect(removeRow(pinned(), "faculty", 0).pins.map((p) => p.offering_id)).toEqual(["O2"]); // F1 teaches O1
+  });
+
+  it("deleting a room keeps the pinned time but frees the room choice", () => {
+    const out = removeRow(pinned(), "rooms", 0);
+    expect(out.pins[0]).toMatchObject({ offering_id: "O1", day: 0, room_id: null });
   });
 });

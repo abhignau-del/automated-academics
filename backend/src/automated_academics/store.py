@@ -6,6 +6,7 @@ simple; swap for PostgreSQL later if multi-user hosting needs it.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -26,6 +27,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TEXT, error TEXT, timetable TEXT
 );
 """
+
+
+def _without_pins(data: str) -> dict:
+    d = json.loads(data)
+    d.pop("pins", None)
+    return d
 
 
 def _now() -> str:
@@ -83,8 +90,10 @@ class Store:
             if row is None:
                 return False
             if row["data"] != data:
-                c.execute("UPDATE institutions SET name=?, data=?, updated_at=? WHERE id=?",
-                          (inst.name, data, _now(), iid))
+                # Pins only steer the next Generate; they don't make an existing timetable wrong.
+                only_pins = _without_pins(row["data"]) == _without_pins(data)
+                c.execute("UPDATE institutions SET name=?, data=?, updated_at=COALESCE(?, updated_at) WHERE id=?",
+                          (inst.name, data, None if only_pins else _now(), iid))
         return True
 
     def delete_institution(self, iid: str) -> bool:

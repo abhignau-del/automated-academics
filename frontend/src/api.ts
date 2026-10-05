@@ -65,6 +65,24 @@ export const createInstitution = (inst: Institution) =>
   request<{ id: string; name: string; issues: DataIssue[] }>("/institutions", json("POST", inst));
 export const updateInstitution = (id: string, inst: Institution) =>
   request<{ id: string; name: string; issues: DataIssue[] }>(`/institutions/${id}`, json("PUT", inst));
+export interface WorkloadOptions {
+  days: string[]; lectures_per_day: number; break_after: number[];
+  classrooms: number | null; seats: number | null; labs: number; lab_seats: number | null;
+  joint_max_students: number; default_students: number;
+}
+export interface WorkloadReport {
+  rows_read: number; rows_used: number; assumptions: string[]; joint: string[]; problems: string[];
+}
+export interface WorkloadDraft { institution: Institution; report: WorkloadReport; issues: DataIssue[] }
+
+/** Read a flat workload list into a draft institution. Nothing is saved until the draft is created. */
+export function importWorkload(file: File, options: WorkloadOptions) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("options", JSON.stringify(options));
+  return request<WorkloadDraft>("/institutions/import-workload", { method: "POST", body: form });
+}
+
 /** The saved data as an Excel workbook (same format as the upload). */
 export const workbookUrl = (id: string) => `${API_BASE}/institutions/${id}/workbook.xlsx`;
 export const deleteInstitution = (id: string) =>

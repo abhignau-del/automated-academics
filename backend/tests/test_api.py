@@ -155,7 +155,8 @@ def test_infeasible_job_fails_cleanly(client):
     iid = client.post("/institutions", json=inst.model_dump(mode="json")).json()["id"]
     jid = client.post(f"/institutions/{iid}/solve").json()["job_id"]
     job = wait(client, jid)
-    assert job["status"] == "failed" and "no lab" in job["error"]
+    assert job["status"] == "failed"
+    assert "needs a lab" in job["error"] and "there are none" in job["error"]  # names the actual cause
     assert client.get(f"/jobs/{jid}/timetable").status_code == 409
 
 
@@ -172,3 +173,23 @@ def test_unfinished_jobs_fail_on_restart(tmp_path):
     with TestClient(create_app(db)) as c:
         job = c.get(f"/jobs/{jid}").json()
     assert job["status"] == "failed" and "restarted" in job["error"]
+
+
+def test_pins_save_without_making_the_timetable_stale(client):
+    inst = sample_institution()
+    iid = client.post("/institutions", json=inst.model_dump(mode="json")).json()["id"]
+    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 4}).json()["job_id"]
+    assert wait(client, jid)["status"] == "done"
+
+    data = client.get(f"/institutions/{iid}").json()
+    data["pins"] = [{"offering_id": "O-MDC101", "session_index": 0, "day": 0, "start": 0, "room_id": None}]
+    assert client.put(f"/institutions/{iid}", json=data).status_code == 200
+    assert client.get(f"/institutions/{iid}").json()["pins"] == data["pins"]
+    assert client.get(f"/jobs/{jid}").json()["stale"] is False  # pins only steer the next Generate
+
+    data["name"] = "Renamed"  # any other change still does
+    client.put(f"/institutions/{iid}", json=data)
+    assert client.get(f"/jobs/{jid}").json()["stale"] is True
+
+    data["pins"] = [{"offering_id": "GHOST", "session_index": 0, "day": 0, "start": 0, "room_id": None}]
+    assert client.put(f"/institutions/{iid}", json=data).status_code == 422  # dangling pin is refused

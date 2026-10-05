@@ -10,6 +10,7 @@ control. Do not expose it to the public internet as is.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
@@ -18,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
-from fastapi import Body, FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -28,17 +29,36 @@ from .checks import check_institution, diagnose
 from .excel_io import ImportErrors, export_workbook, import_workbook
 from .export import build_pdf, build_xlsx
 from .models import Institution, Timetable
-from .solver import InfeasibleError, solve
+from .explain import explain_message
+from .solver import InfeasibleError, Unsatisfiable, solve
 from .store import Store
 from .synthetic import sample_institution
 from .quality import measure, score
 from .validate import find_conflict_details
 from .views import session_views
+from .workload_io import WorkloadError, WorkloadOptions, import_workload
 
 log = logging.getLogger("automated_academics")
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+class WorkloadOptionsIn(BaseModel):
+    """What the import dialog sends; bounds keep a typo from building a nonsense institution."""
+
+    days: list[str] = Field(default=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], min_length=1, max_length=7)
+    lectures_per_day: int = Field(default=4, ge=1, le=12)
+    break_after: list[int] = Field(default=[2], max_length=6)
+    classrooms: int | None = Field(default=None, ge=1, le=500)
+    seats: int | None = Field(default=None, ge=1, le=2000)
+    labs: int = Field(default=0, ge=0, le=100)
+    lab_seats: int | None = Field(default=None, ge=1, le=2000)
+    joint_max_students: int = Field(default=0, ge=0, le=5000)
+    default_students: int = Field(default=60, ge=1, le=2000)
+
+    def to_options(self) -> WorkloadOptions:
+        return WorkloadOptions(**self.model_dump())
 
 
 class SolveRequest(BaseModel):
@@ -121,6 +141,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         store.set_running(jid)
         try:
             store.finish_job(jid, solve(inst, time_limit_s=limit))
+        except Unsatisfiable as e:  # proven impossible: say which of the user's constraints clash
+            store.fail_job(jid, explain_message(inst, str(e)))
         except InfeasibleError as e:
             store.fail_job(jid, str(e))
         except Exception:  # noqa: BLE001 - never leave a job stuck in "running"
@@ -153,6 +175,30 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if kind == "sample":
             return sample_institution()
         return Institution(name="New institution", rooms=[], faculty=[], batches=[], courses=[], offerings=[])
+
+    @app.post("/institutions/import-workload")
+    def import_workload_list(file: UploadFile = File(...), options: str = Form("{}"), sheet: str | None = Form(None)):
+        """Read a flat workload list (subject, teacher, programme, hours...) into a draft institution.
+
+        Nothing is saved: the draft and a report of every assumption and oddity come back for the user
+        to review, then the draft is created with POST /institutions.
+        """
+        try:
+            opt = WorkloadOptionsIn.model_validate(json.loads(options or "{}"))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(422, f"bad options: {e}") from None
+        data = file.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"file larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+        try:
+            inst, report = import_workload(io.BytesIO(data), opt.to_options(), sheet=sheet or None)
+        except WorkloadError as e:
+            raise HTTPException(422, str(e)) from None
+        except (zipfile.BadZipFile, KeyError, OSError):
+            raise HTTPException(400, "not a valid .xlsx workbook") from None
+        _, issues = check_institution(inst.model_dump(mode="json"))
+        return {"institution": inst.model_dump(mode="json"), "report": report.as_dict(),
+                "issues": [i.as_dict() for i in (issues or diagnose(inst))]}
 
     @app.post("/institutions/check")
     def check_draft(data: dict[str, Any] = Body(...)):

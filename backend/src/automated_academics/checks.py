@@ -25,7 +25,7 @@ from .solver import _room_ok
 # table (as it appears in the JSON) -> the field that identifies a row
 ID_FIELD = {"rooms": "id", "faculty": "id", "batches": "id", "courses": "code", "offerings": "id"}
 # JSON key -> the section a UI shows it under
-SECTIONS = {"name": "settings", "calendar": "settings", "weights": "settings", **{k: k for k in ID_FIELD}}
+SECTIONS = {"name": "settings", "calendar": "settings", "weights": "settings", "pins": "pins", **{k: k for k in ID_FIELD}}
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,17 @@ def check_institution(data: Any) -> tuple[Institution | None, list[Issue]]:
         elif _get(batches[ids["batches"][parent]], "group_of"):
             issues.append(_error("batches", i, "group_of",
                                  f"{parent!r} is itself a sub-group; sub-groups of sub-groups are not supported"))
+
+    offering_sessions = {_get(o, "id"): len(_get(o, "sessions") or []) for o in _rows(data, "offerings")
+                         if isinstance(_get(o, "id"), str)}
+    for i, p in enumerate(_rows(data, "pins")):
+        oid, idx, room = _get(p, "offering_id"), _get(p, "session_index"), _get(p, "room_id")
+        if oid not in offering_sessions:
+            issues.append(_error("pins", i, "offering_id", f"unknown offering {oid!r}"))
+        elif isinstance(idx, int) and idx >= offering_sessions[oid]:
+            issues.append(_error("pins", i, "session_index", f"{oid} has only {offering_sessions[oid]} session(s)"))
+        if room not in (None, "") and room not in ids["rooms"]:
+            issues.append(_error("pins", i, "room_id", f"unknown room {room!r}"))
 
     inst: Institution | None = None
     try:
@@ -206,4 +217,85 @@ def diagnose(inst: Institution) -> list[Issue]:
 
     if any(b >= lectures - 1 for b in cal.break_after):
         note("warning", "settings", None, "calendar.break_after", "a break after the last lecture has no effect")
+
+    out += _pin_problems(inst)
+    out += _room_demand(inst)
+    return out
+
+
+# ---------------------------------------------------------------- pins and room demand
+
+def _pin_problems(inst: Institution) -> list[Issue]:
+    """Pins that cannot hold, alone or together."""
+    cal = inst.calendar
+    offerings = {o.id: o for o in inst.offerings}
+    courses = {c.code: c for c in inst.courses}
+    batches = {b.id: b for b in inst.batches}
+    faculty = {f.id: f for f in inst.faculty}
+    rooms = {r.id: r for r in inst.rooms}
+    out: list[Issue] = []
+    claims: dict[tuple, int] = {}  # (kind, id, day, lecture) -> the pin that holds it
+
+    for pi, p in enumerate(inst.pins):
+        o = offerings[p.offering_id]
+        length = o.sessions[p.session_index]
+        tag = f"{p.offering_id} session {p.session_index + 1}"
+        day_name = cal.day_names[p.day] if p.day < cal.days else f"day {p.day + 1}"
+        where = f"{day_name} lecture {p.start + 1}"
+        if p.day >= cal.days or not cal.block_fits(p.start, length):
+            out.append(Issue("error", "pins", pi, "start",
+                             f"{tag} is pinned at {where}, but a {length}-lecture block can't go there (outside the week, or across a break)"))
+            continue
+        covered = [(p.day, t) for t in range(p.start, p.start + length)]
+        fac = faculty[o.faculty_id]
+        blocked = {(s.day, s.lecture) for s in fac.unavailable}
+        if any(c in blocked for c in covered):
+            out.append(Issue("error", "pins", pi, "start", f"{tag} is pinned at {where}, when {fac.name} is unavailable"))
+        if p.room_id is not None:
+            strength = sum(batches[b].strength for b in o.batch_ids)
+            if not _room_ok(rooms[p.room_id], courses[o.course_code].room_kind, strength):
+                out.append(Issue("error", "pins", pi, "room_id",
+                                 f"{tag} is pinned to {rooms[p.room_id].name}, which is the wrong kind of room or too small"))
+        keys = [("F", o.faculty_id)] + [("B", b) for b in inst.occupied_batches(o.batch_ids)]
+        if p.room_id is not None:
+            keys.append(("R", p.room_id))
+        for kind, ident in keys:
+            for day, t in covered:
+                k = (kind, ident, day, t)
+                if k in claims and claims[k] != pi:
+                    other = inst.pins[claims[k]]
+                    what = {"F": "the same teacher", "B": "the same class", "R": "the same room"}[kind]
+                    out.append(Issue("error", "pins", pi, None,
+                                     f"{tag} and {other.offering_id} session {other.session_index + 1} are pinned at the same "
+                                     f"time ({where}) for {what}"))
+                claims[k] = pi
+    return out
+
+
+def _room_demand(inst: Institution) -> list[Issue]:
+    """More lecture-hours than the rooms that could hold them have slots for (a necessary condition).
+
+    Sessions are grouped by which rooms could take them; a group needing more hours than its rooms
+    have slots can never be placed, however cleverly.
+    """
+    batches = {b.id: b for b in inst.batches}
+    courses = {c.code: c for c in inst.courses}
+    cal = inst.calendar
+    slots = cal.days * cal.lectures_per_day
+    by_set: dict[frozenset[str], list[tuple[int, str]]] = defaultdict(list)
+    for o in inst.offerings:
+        strength = sum(batches[b].strength for b in o.batch_ids)
+        eligible = frozenset(r.id for r in inst.rooms if _room_ok(r, courses[o.course_code].room_kind, strength))
+        if eligible:  # sessions with no eligible room are already reported on their offering
+            by_set[eligible].append((sum(o.sessions), o.id))
+    out: list[Issue] = []
+    names = {r.id: r.name for r in inst.rooms}
+    for rooms, _ in list(by_set.items()):
+        # sessions whose possible rooms are all inside this set can only use these rooms
+        inside = [x for s, xs in by_set.items() if s <= rooms for x in xs]
+        need, capacity = sum(h for h, _ in inside), len(rooms) * slots
+        if need > capacity:
+            label = ", ".join(sorted(names[r] for r in rooms)) if len(rooms) <= 3 else f"{len(rooms)} rooms"
+            out.append(Issue("error", "rooms", None, None,
+                             f"{need} lectures a week can only use {label}, which have {capacity} slots between them"))
     return out

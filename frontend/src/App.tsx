@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
 import { DataEditor } from "./DataEditor";
 import { Grid } from "./Grid";
+import { WorkloadImport } from "./WorkloadImport";
+import { lock, pinnedKeys, unlock } from "./pins";
 import { changeRoom, moveSession, placementsFor, sessionKey } from "./timetable";
 import type {
-  ConflictReport, Institution, InstitutionSummary, Placement, Quality, UploadIssue, ViewKind,
+  ConflictReport, Institution, InstitutionSummary, Pin, Placement, Quality, UploadIssue, ViewKind,
 } from "./types";
 
 
@@ -72,6 +74,7 @@ export default function App() {
   const [dataDirty, setDataDirty] = useState(false); // unsaved edits in the Data tab
   const [dataErrors, setDataErrors] = useState(0); // problems in the saved data that block generating
   const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -117,6 +120,16 @@ export default function App() {
     countErrors(fresh);
     refreshList();
     if (jobId) setJobStale(!!(await api.getJob(jobId)).stale);
+  }
+
+  /** A workload list was imported and created: show it, in the Data tab so it can be reviewed and completed. */
+  async function afterImport(id: string) {
+    setImporting(false);
+    if (dataDirty && !confirm("You have unsaved changes to this institution's data. Discard them?")) return;
+    await refreshList();
+    setDataDirty(false);
+    setIid(id);
+    setView("data");
   }
 
   async function createNew(kind: "blank" | "sample") {
@@ -196,8 +209,9 @@ export default function App() {
     setHistory((h) => [...h, placements]);
     setPlacements(next);
   };
+  const pinned = useMemo(() => pinnedKeys(inst?.pins ?? []), [inst]);
   const onMove = (key: string, day: number, start: number) => {
-    if (!inst) return;
+    if (!inst || pinned.has(key)) return;
     const next = moveSession(inst.calendar, placements, key, day, start);
     if (next) commit(next);
   };
@@ -221,6 +235,15 @@ export default function App() {
       if (e instanceof api.ApiError && e.issues.length) { setIssues(e.issues); setError(e.message); }
       else fail(e);
     }
+  }
+
+  /** Pins are saved straight away, apart from the timetable's own edits; they steer the next Generate. */
+  async function savePins(pins: Pin[]) {
+    if (!inst || !iid) return;
+    try {
+      await api.updateInstitution(iid, { ...inst, pins });
+      setInst({ ...inst, pins });
+    } catch (e) { fail(e); }
   }
 
   async function onSolve() {
@@ -268,6 +291,7 @@ export default function App() {
             </button>
             {newMenuOpen && (
               <div className="menu-list left" role="menu">
+                <button role="menuitem" onClick={() => { setNewMenuOpen(false); setImporting(true); }}>Import a workload list…</button>
                 <button role="menuitem" onClick={() => createNew("blank")}>Blank institution</button>
                 <button role="menuitem" onClick={() => createNew("sample")}>Copy of the sample</button>
               </div>
@@ -290,6 +314,8 @@ export default function App() {
         </ul>
         {!list.length && <p className="muted">No institutions yet. Start a blank one and enter your data here, or upload an Excel workbook.</p>}
       </aside>
+
+      {importing && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(false)} />}
 
       <main>
         {error && <div className="alert" role="alert">{error}<button onClick={() => { setError(null); setIssues([]); }}>×</button></div>}
@@ -404,11 +430,22 @@ export default function App() {
                   </div>
                 </div>
 
-                <p className="hint">Drag a session to a new slot. Clashes are checked as you go; sessions involved turn red.</p>
+                <p className="hint">Drag a session to a new slot. Clashes are checked as you go; sessions involved turn red.
+                  Lock sessions you are happy with and they stay put when you regenerate.
+                  {inst.pins.length > 0 && ` ${inst.pins.length} locked.`}
+                  {items.length > 0 && (
+                    <>
+                      {" "}<button className="linkish" onClick={() => savePins(lock(inst.pins, items))} disabled={dataDirty}>Lock all shown</button>
+                      {items.some((p) => pinned.has(sessionKey(p))) && (
+                        <>{" · "}<button className="linkish" onClick={() => savePins(unlock(inst.pins, new Set(items.map(sessionKey))))} disabled={dataDirty}>Unlock all shown</button></>
+                      )}
+                    </>
+                  )}
+                </p>
 
                 <div className="work">
                   <Grid inst={inst} items={items} kind={kind} conflictOfferings={conflictOfferings}
-                    selected={selected} onSelect={setSelected} onMove={onMove} />
+                    pinned={pinned} selected={selected} onSelect={setSelected} onMove={onMove} />
 
                   <div className="side">
                     {sel && selOffering ? (
@@ -418,8 +455,18 @@ export default function App() {
                         <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
+                        {pinned.has(sessionKey(sel)) ? (
+                          <button className="btn" onClick={() => savePins(unlock(inst.pins, new Set([sessionKey(sel)])))} disabled={dataDirty}>
+                            🔓 Unlock this session
+                          </button>
+                        ) : (
+                          <button className="btn" onClick={() => savePins(lock(inst.pins, [sel]))} disabled={dataDirty}
+                            title="Keep it exactly here, in this room, when you regenerate">
+                            🔒 Lock in place
+                          </button>
+                        )}
                         <label>Room
-                          <select value={sel.room_id} onChange={(e) => commit(changeRoom(placements, sessionKey(sel), e.target.value))}>
+                          <select disabled={pinned.has(sessionKey(sel))} value={sel.room_id} onChange={(e) => commit(changeRoom(placements, sessionKey(sel), e.target.value))}>
                             {inst.rooms.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.kind}, {r.capacity})</option>)}
                           </select>
                         </label>

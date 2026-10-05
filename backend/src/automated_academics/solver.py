@@ -44,7 +44,15 @@ MIN_FIRST_SOLUTION_S = 20.0
 
 
 class InfeasibleError(RuntimeError):
-    """Raised when a session has no possible room or slot, or the model has no solution."""
+    """Raised when no timetable was produced."""
+
+
+class Unsatisfiable(InfeasibleError):
+    """Proven impossible: the constraints cannot all hold, however much time is spent."""
+
+
+class TimedOut(InfeasibleError):
+    """No timetable was found in the time given; one may exist."""
 
 
 def _room_ok(room: Room, needed: RoomKind, strength: int) -> bool:
@@ -81,7 +89,7 @@ class _Session:
 
 
 def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
-          log_search: bool = False) -> Timetable:
+          log_search: bool = False, min_first_solution_s: float | None = None) -> Timetable:
     cal = inst.calendar
     n_lectures, n_days = cal.lectures_per_day, cal.days
     courses = {c.code: c for c in inst.courses}
@@ -89,6 +97,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
     faculty = {f.id: f for f in inst.faculty}
     w = inst.weights
 
+    pins = {(p.offering_id, p.session_index): p for p in inst.pins}
     model = cp_model.CpModel()
     sessions: list[_Session] = []
     fac_intervals: dict[str, list] = defaultdict(list)
@@ -112,14 +121,26 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
 
         for i, length in enumerate(off.sessions):
             if not rooms:
-                raise InfeasibleError(
+                raise Unsatisfiable(
                     f"{off.id} session {i}: no {course.room_kind.value} with capacity >= {strength}")
             slots = [d * n_lectures + p
                      for d in range(n_days) for p in range(n_lectures)
                      if cal.block_fits(p, length)
                      and not any((d, t) in blocked for t in range(p, p + length))]
             if not slots:
-                raise InfeasibleError(f"{off.id} session {i}: no admissible slot")
+                raise Unsatisfiable(f"{off.id} session {i}: no admissible slot")
+
+            pin = pins.get((off.id, i))
+            usable = rooms
+            if pin is not None:  # a pinned session may only go where it is pinned
+                at = pin.day * n_lectures + pin.start
+                if pin.day >= n_days or at not in slots:
+                    raise Unsatisfiable(f"{off.id} session {i + 1} is pinned where it cannot go")
+                slots = [at]
+                if pin.room_id is not None:
+                    usable = [r for r in rooms if r.id == pin.room_id]
+                    if not usable:
+                        raise Unsatisfiable(f"{off.id} session {i + 1} is pinned to a room it cannot use")
 
             tag = f"{off.id}_{i}"
             starts = {t: model.NewBoolVar(f"s_{tag}_{t}") for t in slots}
@@ -133,7 +154,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                 batch_intervals[b].append(interval)
 
             sess = _Session(off.id, i, length, starts)
-            for r in rooms:
+            for r in usable:
                 y = model.NewBoolVar(f"r_{tag}_{r.id}")
                 sess.rooms.append((r, y))
                 room_intervals[r.id].append(
@@ -177,13 +198,14 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
     # Stage 1 stops at its first solution, so a generous ceiling costs nothing when it is easy and
     # prevents "no result" when it is not. The time limit therefore mainly governs the improvement
     # stage: finding any valid timetable can take longer than a very short limit.
-    first = _new_solver(max(time_limit_s * 0.85, MIN_FIRST_SOLUTION_S), workers, log_search)
+    floor = MIN_FIRST_SOLUTION_S if min_first_solution_s is None else min_first_solution_s
+    first = _new_solver(max(time_limit_s * 0.85, floor), workers, log_search)
     first_status = first.Solve(model)
     if first_status == cp_model.INFEASIBLE:
-        raise InfeasibleError("no timetable can satisfy all the hard constraints "
-                              "(too many sessions for the available faculty, rooms or slots?)")
+        raise Unsatisfiable("no timetable can satisfy all the hard constraints "
+                            "(too many sessions for the available faculty, rooms or slots?)")
     if first_status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise InfeasibleError("no timetable found within the time limit; try a longer one")
+        raise TimedOut("no timetable found within the time limit; try a longer one")
 
     def extract(solution) -> list[Placement]:
         out = []
