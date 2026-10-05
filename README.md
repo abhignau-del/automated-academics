@@ -88,7 +88,24 @@ one, and use the UI's time-limit setting (up to 15 minutes). The time limit gove
 stage; on big inputs finding the first valid timetable can itself outlast a very short limit.
 **Whole-university scale (thousands of sessions) and real-world data have not been tested.**
 
-## Quick start
+## Install the Windows app (nothing else to set up)
+
+Each release can include **`Automated-Academics-<version>-windows.zip`**, a ready-to-run copy that needs no
+Python and no Node.
+
+1. Download the zip from the project's *Releases* page and **extract it** (right-click, *Extract All*).
+2. Open the extracted folder and double-click **`Automated Academics`**. A black window opens and, a few
+   seconds later, the app opens in your browser. Leave the black window open while you work.
+3. When you are finished, close the black window. Your data is kept in `%APPDATA%\Automated Academics`
+   (paste that into the address bar of File Explorer to see it), so upgrading is just extracting a newer zip.
+
+Windows may say *"Windows protected your PC"* the first time, because the app is not code-signed. Choose
+*More info*, then *Run anyway*. Everything runs on your computer and nothing is sent anywhere.
+
+To make the zip yourself, run `scripts\build-app.ps1` (needs Python and Node on the building computer only).
+A release workflow does the same when a version tag is pushed.
+
+## Quick start (for developers)
 
 Requires Python 3.11+.
 
@@ -289,6 +306,8 @@ font such as Noto Sans.
   institution, so two people editing at once would overwrite each other (last save wins).
 - **No authentication.** Run it on localhost or behind your own access control.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
+- **The Windows app is unsigned and has only been tried on Windows 11.** The release workflow that builds it has
+  not run on GitHub yet; the local build and a start-to-export smoke test (`scripts/smoke_app.py`) have.
 - **Clash messages are technical** (zero-based day and lecture numbers), and a clash highlights
   every session of the affected course, not only the clashing one.
 - **Scale is bounded.** Departments of a few hundred sessions work; whole-university timetables
@@ -310,6 +329,8 @@ font such as Noto Sans.
 - [x] Drag-and-drop editing with live clash detection, undo and save
 - [x] In-app data entry with live validation, impossible-data diagnostics and Excel round trip
 - [x] Spreadsheet-style editing: paste from Excel, bulk edit, undo / redo, filter, keyboard movement
+- [x] Windows app: extract and double-click, no Python or Node needed
+- [x] Import a workload list; lock sessions in place; plain-language reasons when no timetable exists
 - [ ] Browser tests in CI (today the end-to-end journeys are run by hand)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights

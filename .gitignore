@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 node_modules/
 dist/
+dist-app/
 .env
 *.db
 *.sqlite3

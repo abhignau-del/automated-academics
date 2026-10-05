@@ -15,6 +15,10 @@
   cannot hold together (for example "Teacher A and Teacher B are both free only at lecture 2, for the same
   class"), or says the data itself is impossible and lists why. New checks catch pins that cannot fit, and
   rooms whose total demand exceeds their slots.
+- **Windows app that needs no setup.** `scripts\build-app.ps1` builds a folder (and zip) that runs by double-click:
+  the engine and the screen come from one address, data lives in `%APPDATA%\Automated Academics`, and a second
+  launch just reopens the running one. A release workflow builds and attaches it when a version tag is pushed
+  (`scripts/smoke_app.py` checks the built app: start, screen, generate, export, data folder).
 - Tests: 21 workload-import tests, 14 pin and explanation tests, an API test, and a browser journey covering
   lock, regenerate, unlock and the failure message.
 

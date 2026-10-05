@@ -21,6 +21,7 @@ from typing import Any, Literal
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -97,7 +98,8 @@ def _report(inst: Institution, tt: Timetable) -> ConflictReport:
     )
 
 
-def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None) -> FastAPI:
+def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None,
+               static_dir: str | None = None) -> FastAPI:
     store = Store(db_path or os.environ.get("AA_DB", "automated_academics.db"))
     pdf_font = pdf_font or os.environ.get("AA_PDF_FONT") or None
     if pdf_font and not os.path.isfile(pdf_font):
@@ -361,5 +363,11 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         except LookupError:
             raise HTTPException(404, f"{kind} not found") from None
         return {"kind": kind, "id": ident, "sessions": sessions}  # lectures are zero-based
+
+    # The packaged app serves the built screen itself, from the same address as the engine.
+    # Mounted last so every API route above takes priority.
+    static_dir = static_dir or os.environ.get("AA_STATIC") or None
+    if static_dir and os.path.isfile(os.path.join(static_dir, "index.html")):
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="screen")
 
     return app
