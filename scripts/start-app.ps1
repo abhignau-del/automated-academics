@@ -71,12 +71,25 @@ if (IsUp "http://127.0.0.1:8000/health") {
 }
 
 # ---- the screen (port 5173; strict, because the engine only accepts requests from that address) ----
+# It serves the built (production) version, which is about twice as fast to type into as the development
+# server on large data. The build runs only when it is missing or the source is newer (about 20 seconds).
 if (IsUp $url) {
     Write-Host "Screen: already running"
 } else {
+    $frontend = Join-Path $root "frontend"
+    $built = Join-Path $frontend "dist\index.html"
+    $sources = @(Get-ChildItem (Join-Path $frontend "src") -Recurse -File) +
+        @(Get-Item (Join-Path $frontend "index.html"), (Join-Path $frontend "package.json"), (Join-Path $frontend "vite.config.ts") -ErrorAction SilentlyContinue)
+    $newest = $sources | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not (Test-Path $built) -or ($newest -and $newest.LastWriteTime -gt (Get-Item $built).LastWriteTime)) {
+        Write-Host "Screen: preparing (about 20 seconds)..."
+        Push-Location $frontend
+        try { npm run build 2>&1 | Out-Host } finally { Pop-Location }
+        if (-not (Test-Path $built)) { Fail "Preparing the screen failed (see the messages above)." }
+    }
     Write-Host -NoNewline "Screen: starting"
-    $screen = Start-Process -FilePath "npm.cmd" -WorkingDirectory (Join-Path $root "frontend") -WindowStyle Hidden -PassThru `
-        -ArgumentList @("run", "dev", "--", "--port", "5173", "--strictPort") `
+    $screen = Start-Process -FilePath "npm.cmd" -WorkingDirectory $frontend -WindowStyle Hidden -PassThru `
+        -ArgumentList @("run", "preview", "--", "--port", "5173", "--strictPort") `
         -RedirectStandardOutput (Join-Path $logs "screen.out.log") -RedirectStandardError (Join-Path $logs "screen.log")
     WaitFor "screen" $url (Join-Path $logs "screen.out.log") $screen
 }

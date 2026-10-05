@@ -135,6 +135,22 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .setting-note { margin: 0; font-size: 13px; }
 .setting-note.warning { color: #b26a00; }
 .alert.stale { background: #fff4d6; border-color: #d9a400; color: #5a4300; }
+/* ---- spreadsheet-style editing ---- */
+.tabletools { display: flex; align-items: center; gap: 8px; width: 100%; flex-wrap: wrap; }
+.tabletools .filter { width: 220px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+.bulkbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; padding: 6px 10px; background: var(--bg); border: 1px solid var(--accent); border-radius: 6px; }
+.bulkset { display: inline-flex; align-items: center; gap: 6px; }
+.bulkset select, .bulkset input { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; }
+.selcell { width: 28px; text-align: center; }
+.etable td.selcell input, .etable th.selcell input { width: auto; }
+.etable tr.selected td { background: rgba(31, 78, 120, .08); }
+.alert.note { white-space: pre-line; background: var(--bg); border-color: var(--accent); }
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; width: min(760px, 100%); max-height: 90vh; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.modal-card textarea { width: 100%; font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.pastepreview { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.pastepreview p { margin: 4px 0; }
 .menu-list.left { left: 0; right: auto; }
 .menu-list button { text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: none; cursor: pointer; color: var(--text); }
 .menu-list button:hover { background: var(--bg); }

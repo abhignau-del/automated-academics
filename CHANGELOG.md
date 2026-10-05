@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased (spreadsheet-style editing)
+
+- **Paste from Excel / Google Sheets**, into the cells (fills down and across, adds rows as needed) or via
+  **Paste from spreadsheet…**, which recognises a heading row (columns matched by name in any order, existing
+  ids updated, new ones added) and previews how many rows are new and updated. Choices match by id or name;
+  anything unreadable is reported and left alone.
+- **Bulk edit:** tick rows (or all rows shown), then set a column on all of them, duplicate, or delete them
+  (with a summary of what else the delete takes with it). New **filter** box on every table.
+- **Undo / redo** for all data edits, including pastes and bulk edits; typing in a cell is one step.
+- **Keyboard:** Enter and the up/down arrows move between rows; Escape cancels typing.
+- **Scale:** a measured fix. With about 1,000 offerings, typing took 1.6 s per keystroke and the Offerings tab
+  hung the browser. Rows are now memoised, each table gets only the choices it needs, long choice lists use one
+  shared type-ahead list instead of a dropdown per row, and 200 rows are drawn at a time. Typing is now 25-40 ms.
+- **The launcher serves the built app** (building it on first start, or when the source changed) instead of the
+  development server, which is about twice as fast to type into.
+- **Fixed:** pressing Escape in an id cell (and in the new type-ahead fields) committed the half-typed text
+  instead of cancelling it. An id cell would have renamed the row.
+- Tests: 59 new unit tests (paste parsing and column mapping, bulk operations, undo history) and, run by hand,
+  three browser journeys covering the whole editor (36 + 33 + 20 checks) against the production build.
+
 ## v0.3.0 (2026-10-05)
 
 In-app data entry, and a double-click launcher for Windows. Existing data, workbooks and databases keep

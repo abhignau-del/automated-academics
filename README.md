@@ -141,6 +141,34 @@ else it will take with it before you confirm. Editing the data marks an existing
 exports are held back until you regenerate it. **Download Excel** saves the data as a workbook you can keep as a
 backup or upload again.
 
+### Working like a spreadsheet
+
+- **Paste from Excel or Google Sheets.** Copy cells, click a cell in the table and paste (Ctrl+V): the cells fill
+  down and across from where you clicked, and extra rows are added as needed. For a table with no rows yet, or to
+  import a whole sheet, use **Paste from spreadsheet…**: if your first row is a heading row, columns are matched by
+  name in any order and rows whose ID already exists are updated rather than duplicated; it tells you how many are
+  new and updated before you apply. Choices are matched by id or by name, so you can paste "Asha Rao" where a
+  teacher is expected. Anything it can't read is reported and left alone, never silently dropped.
+- **Bulk edit.** Tick rows (or the box in the heading to tick every row shown), then set one column on all of
+  them, **Duplicate** them, or **Delete** them (with a summary of what else goes). Combine with the **filter** box
+  to act on, say, every lab.
+- **Undo and redo** for every change, including pastes and bulk edits (Ctrl+Z / Ctrl+Y outside a text field, or
+  the buttons). Typing a word in one cell is one step, so Undo reverts the whole word.
+- **Keyboard:** Tab moves across, **Enter** (or the up/down arrows in a text cell) moves between rows,
+  **Escape** cancels what you were typing.
+- **Long lists stay usable.** Where a column offers many choices (hundreds of courses), the cell becomes a
+  type-ahead field with one shared suggestion list instead of a huge dropdown on every row, and only the first 200
+  rows of a table are drawn at a time (*Show more* for the rest; the filter searches all of them).
+
+![Pasting rows copied from a spreadsheet: the heading row is recognised and the preview says two are new and one is updated](docs/screenshot-paste-dialog.png)
+
+![Rows ticked for a bulk edit](docs/screenshot-bulk-edit.png)
+
+Measured on a 12-core laptop with the built app and a fictional institution of about 1,000 offerings, 960
+courses and 2,700 weekly sessions: typing in a table takes about 25-40 ms per keystroke (about 90 ms with every
+row drawn), a bulk edit of 960 rows about 1.4 s, and the server's check after each edit about 0.4 s. Beyond that
+size is untested.
+
 ## Loading your own data from Excel
 
 Start from [docs/institution-template.xlsx](docs/institution-template.xlsx) (fictional sample data)
@@ -201,7 +229,9 @@ After the one-time setup in *Quick start*, you never need a terminal:
 - Double-click **`Stop Automated Academics.bat`** when you are finished. Your data is kept.
 - For a Desktop icon, right-click either file and choose *Send to → Desktop (create shortcut)*.
 
-The first start installs the screen's components (needs internet, about a minute). If something goes wrong,
+The first start installs the screen's components (needs internet, about a minute) and builds the screen; it
+rebuilds automatically when the source has changed, and serves that built version because it is about twice as
+fast to type into as the development server. If something goes wrong,
 the window says why and `logs\` has the details. Your data lives in `backend\automated_academics.db`.
 Stop only ends this app's own processes; if another program is using port 8000 or 5173 it is left alone.
 
@@ -253,10 +283,10 @@ font such as Noto Sans.
 
 - **Tested on synthetic data only.** Real institutions have rules this does not model yet
   (see the roadmap). Try it on a copy of your data and check the result before relying on it.
-- **The data editor is basic.** Tables are edited cell by cell: no paste-in from a spreadsheet (upload a
-  workbook for bulk data), no undo beyond *Discard*, and it hasn't been tried with thousands of rows.
-  Saving replaces the whole institution, so two people editing at once would overwrite each other
-  (last save wins).
+- **The data editor is not a full spreadsheet.** There is no drag-to-fill or cell range selection, a teacher's
+  availability is edited on its grid (it can be pasted only by heading, as `Mon:1, Tue:3`), undo history is
+  lost when you save or reload, and it hasn't been tried beyond about 1,000 offerings. Saving replaces the whole
+  institution, so two people editing at once would overwrite each other (last save wins).
 - **No authentication.** Run it on localhost or behind your own access control.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
 - **Clash messages are technical** (zero-based day and lecture numbers), and a clash highlights
@@ -279,7 +309,8 @@ font such as Noto Sans.
 - [x] React UI: Excel upload, generate, class / faculty / room views
 - [x] Drag-and-drop editing with live clash detection, undo and save
 - [x] In-app data entry with live validation, impossible-data diagnostics and Excel round trip
-- [ ] Spreadsheet-style editing: paste rows from Excel, bulk edit, undo history
+- [x] Spreadsheet-style editing: paste from Excel, bulk edit, undo / redo, filter, keyboard movement
+- [ ] Browser tests in CI (today the end-to-end journeys are run by hand)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
