@@ -52,7 +52,7 @@ def test_upload_solve_and_view(client, xlsx_bytes):
     assert client.get(f"/institutions/{iid}").json()["name"].startswith("Sample")
     assert [i["id"] for i in client.get("/institutions").json()] == [iid]
 
-    r = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 20})
+    r = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 4})
     assert r.status_code == 202
     job = wait(client, r.json()["job_id"])
     assert job["status"] == "done", job
@@ -63,7 +63,9 @@ def test_upload_solve_and_view(client, xlsx_bytes):
 
     # a solver result must pass the independent validator
     check = client.post(f"/institutions/{iid}/validate", json=tt).json()
-    assert check == {"ok": True, "conflicts": [], "details": []}
+    assert (check["ok"], check["conflicts"], check["details"]) == (True, [], [])
+    assert set(check["quality"]) == {"repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot"}
+    assert check["penalty"] == tt["penalty"]  # live scoring agrees with what the solver reported
 
     # a hand-edit that creates a clash is reported, naming the offerings involved
     tt["placements"][1].update({k: tt["placements"][0][k] for k in ("day", "start", "room_id")})
@@ -85,7 +87,7 @@ def test_upload_solve_and_view(client, xlsx_bytes):
 def test_save_edit_and_reload_latest(client, xlsx_bytes):
     iid = upload(client, xlsx_bytes).json()["id"]
     assert client.get(f"/institutions/{iid}/latest-job").status_code == 404
-    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 20}).json()["job_id"]
+    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 4}).json()["job_id"]
     assert wait(client, jid)["status"] == "done"
     assert client.get(f"/institutions/{iid}/latest-job").json()["id"] == jid
 
@@ -93,7 +95,7 @@ def test_save_edit_and_reload_latest(client, xlsx_bytes):
     first = tt["placements"][0]
     first["day"], first["start"] = (first["day"] + 1) % 6, 0 if first["length"] == 1 else 4
     report = client.put(f"/jobs/{jid}/timetable", json=tt).json()
-    assert set(report) == {"ok", "conflicts", "details"}
+    assert set(report) == {"ok", "conflicts", "details", "quality", "penalty"}
     saved = client.get(f"/jobs/{jid}/timetable").json()
     assert saved["status"] == "MANUAL"
     assert (saved["placements"][0]["day"], saved["placements"][0]["start"]) == (first["day"], first["start"])

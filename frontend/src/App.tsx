@@ -3,11 +3,45 @@ import * as api from "./api";
 import { Grid } from "./Grid";
 import { changeRoom, moveSession, placementsFor, sessionKey } from "./timetable";
 import type {
-  ConflictReport, Institution, InstitutionSummary, Placement, UploadIssue, ViewKind,
+  ConflictReport, Institution, InstitutionSummary, Placement, Quality, UploadIssue, ViewKind,
 } from "./types";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sameList = (a: Placement[], b: Placement[]) => JSON.stringify(a) === JSON.stringify(b);
+
+const GOALS: { key: keyof Quality; label: string; hint: string }[] = [
+  { key: "batch_gaps", label: "Class idle gaps", hint: "Free lectures between a class's first and last lecture of a day" },
+  { key: "faculty_gaps", label: "Faculty idle gaps", hint: "Free lectures between a teacher's first and last lecture of a day" },
+  { key: "peak_day_load", label: "Busiest-day load", hint: "Lectures on each class's busiest day, added up. Lower means a more even week" },
+  { key: "repeat_course_day", label: "Repeated courses", hint: "Extra sessions of the same course on one day" },
+  { key: "avoid_slot", label: "Avoided slots used", hint: "Lectures placed where a teacher asked not to teach" },
+];
+
+/** How good the timetable is on the soft goals. With unsaved edits, shows the change since the saved version. */
+function QualityPanel({ quality, saved }: { quality: Quality; saved: Quality | null }) {
+  return (
+    <section>
+      <h3>Quality</h3>
+      <p className="muted small">Lower is better. 0 is ideal.</p>
+      <table className="quality">
+        <tbody>
+          {GOALS.map(({ key, label, hint }) => {
+            const delta = saved ? quality[key] - saved[key] : 0;
+            return (
+              <tr key={key} title={hint}>
+                <td>{label}</td>
+                <td className="num">{quality[key]}</td>
+                <td className={"num delta " + (delta < 0 ? "better" : delta > 0 ? "worse" : "")}>
+                  {delta ? (delta > 0 ? `+${delta}` : `${delta}`) : ""}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 export default function App() {
   const [list, setList] = useState<InstitutionSummary[]>([]);
@@ -19,6 +53,7 @@ export default function App() {
   const [saved, setSaved] = useState<Placement[]>([]);
   const [history, setHistory] = useState<Placement[][]>([]);
   const [report, setReport] = useState<ConflictReport | null>(null);
+  const [savedQuality, setSavedQuality] = useState<Quality | null>(null); // quality of the saved timetable
 
   const [solving, setSolving] = useState(false);
   const [timeLimit, setTimeLimit] = useState(30);
@@ -37,6 +72,9 @@ export default function App() {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
+
+  const savedRef = useRef<Placement[]>([]); // latest `saved`, readable from async callbacks
+  useEffect(() => { savedRef.current = saved; }, [saved]);
 
   const epoch = useRef(0); // bumps when the institution changes, to drop stale async results
   const dirty = !sameList(placements, saved);
@@ -78,8 +116,12 @@ export default function App() {
     if (!iid || !jobId) { setReport(null); return; }
     let cancelled = false;
     const t = setTimeout(() => {
-      api.validate(iid, { placements, status: "MANUAL", penalty: 0 })
-        .then((r) => { if (!cancelled) setReport(r); })
+      api.validate(iid, { placements, status: "MANUAL", penalty: 0, breakdown: {} })
+        .then((r) => {
+          if (cancelled) return;
+          setReport(r);
+          if (sameList(placements, savedRef.current)) setSavedQuality(r.quality); // this IS the saved one
+        })
         .catch((e) => { if (!cancelled) fail(e); });
     }, 120);
     return () => { cancelled = true; clearTimeout(t); };
@@ -155,8 +197,8 @@ export default function App() {
   async function onSave() {
     if (!jobId) return;
     try {
-      const r = await api.saveTimetable(jobId, { placements, status: "MANUAL", penalty: 0 });
-      setSaved(placements); setReport(r);
+      const r = await api.saveTimetable(jobId, { placements, status: "MANUAL", penalty: 0, breakdown: {} });
+      setSaved(placements); setReport(r); setSavedQuality(r.quality);
     } catch (e) { fail(e); }
   }
 
@@ -210,7 +252,9 @@ export default function App() {
               <span className="spacer" />
               <label>Time limit
                 <select value={timeLimit} onChange={(e) => setTimeLimit(Number(e.target.value))} disabled={solving}>
-                  {[10, 30, 60, 120, 300].map((s) => <option key={s} value={s}>{s}s</option>)}
+                  {[10, 30, 60, 120, 300, 600, 900].map((s) => (
+                    <option key={s} value={s}>{s >= 60 ? `${s / 60} min` : `${s}s`}</option>
+                  ))}
                 </select>
               </label>
               <button className="btn primary" onClick={onSolve} disabled={solving}>
@@ -289,6 +333,8 @@ export default function App() {
                         </label>
                       </section>
                     ) : <p className="muted">Select a session to see details or change its room.</p>}
+
+                    {report && <QualityPanel quality={report.quality} saved={dirty ? savedQuality : null} />}
 
                     {report && !report.ok && (
                       <section>

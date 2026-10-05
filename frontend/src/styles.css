@@ -78,6 +78,13 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .side section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .side p { margin: 6px 0; }
 .side label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.small { font-size: 12px; margin: 2px 0 6px !important; }
+.quality { width: 100%; border-collapse: collapse; font-size: 13px; }
+.quality td { padding: 3px 0; }
+.quality td.num { text-align: right; width: 34px; font-variant-numeric: tabular-nums; }
+.quality td.delta { font-weight: 600; }
+.quality td.delta.better { color: var(--good); }
+.quality td.delta.worse { color: var(--bad); }
 .problems { margin: 8px 0 0; padding-left: 18px; color: var(--bad); font-size: 13px; }
 @media (max-width: 1100px) { .work { flex-direction: column; } .side { width: 100%; } }
 

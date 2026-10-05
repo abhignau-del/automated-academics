@@ -30,7 +30,7 @@ def test_round_trip_preserves_model(workbook):
 
 def test_imported_workbook_solves(workbook):
     inst = import_workbook(workbook)
-    tt = solve(inst, time_limit_s=30)
+    tt = solve(inst, time_limit_s=4)
     assert find_conflicts(inst, tt) == []
 
 
@@ -70,6 +70,63 @@ def test_missing_sheet_and_column(workbook):
         import_workbook(workbook)
     text = str(exc.value)
     assert "Rooms: sheet not found" in text
+
+
+def institution_row(path, key):
+    ws = load_workbook(path)["Institution"]
+    return next(r for r in range(2, ws.max_row + 1) if ws.cell(row=r, column=1).value == key)
+
+
+def test_weights_and_avoid_round_trip(tmp_path):
+    inst = sample_institution()
+    inst.weights = inst.weights.model_copy(update={"batch_gaps": 25, "avoid_slot": 0})
+    p = tmp_path / "w.xlsx"
+    export_workbook(inst, p)
+    back = import_workbook(p)
+    assert back.weights == inst.weights
+    assert back.faculty[0].avoid == inst.faculty[0].avoid and back.faculty[0].avoid  # not vacuous
+
+
+def test_blank_weight_uses_default_and_zero_is_kept(workbook):
+    wb = load_workbook(workbook)
+    ws = wb["Institution"]
+    ws.cell(row=institution_row(workbook, "weight_batch_gaps"), column=2, value=None)
+    ws.cell(row=institution_row(workbook, "weight_faculty_gaps"), column=2, value=0)
+    wb.save(workbook)
+    w = import_workbook(workbook).weights
+    assert w.batch_gaps == 10 and w.faculty_gaps == 0
+
+
+@pytest.mark.parametrize("bad", [-1, "lots", 2.5])
+def test_bad_weight_is_reported(workbook, bad):
+    wb = load_workbook(workbook)
+    wb["Institution"].cell(row=institution_row(workbook, "weight_peak_day_load"), column=2, value=bad)
+    wb.save(workbook)
+    with pytest.raises(ImportErrors) as exc:
+        import_workbook(workbook)
+    assert "weight" in str(exc.value) and exc.value.issues[0].sheet == "Institution"
+
+
+def test_bad_avoid_entry_is_reported(workbook):
+    edit(workbook, "Faculty", 2, "avoid", "Someday:3")
+    with pytest.raises(ImportErrors) as exc:
+        import_workbook(workbook)
+    assert "Faculty row 2" in str(exc.value) and "avoid" in str(exc.value)
+
+
+def test_workbook_without_avoid_column_or_weights_still_imports(workbook):
+    wb = load_workbook(workbook)
+    fac = wb["Faculty"]
+    col = next(i for i, c in enumerate(fac[1], start=1) if c.value == "avoid")
+    fac.delete_cols(col)
+    inst_ws = wb["Institution"]
+    for r in sorted((r for r in range(2, inst_ws.max_row + 1)
+                     if str(inst_ws.cell(row=r, column=1).value).startswith("weight_")), reverse=True):
+        inst_ws.delete_rows(r)
+    wb.save(workbook)
+    inst = import_workbook(workbook)
+    assert all(f.avoid == [] for f in inst.faculty)
+    assert inst.weights.batch_gaps == 10  # defaults
 
 
 def test_cli_template_then_check(tmp_path, capsys):

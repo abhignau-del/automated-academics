@@ -30,6 +30,7 @@ from .models import Institution, Timetable
 from .solver import InfeasibleError, solve
 from .store import Store
 from .synthetic import sample_institution
+from .quality import measure, score
 from .validate import find_conflict_details
 from .views import session_views
 
@@ -40,7 +41,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 class SolveRequest(BaseModel):
-    time_limit_s: float = Field(default=30, ge=1, le=300)
+    time_limit_s: float = Field(default=30, ge=1, le=900)
 
 
 class ConflictDetail(BaseModel):
@@ -52,6 +53,9 @@ class ConflictReport(BaseModel):
     ok: bool
     conflicts: list[str]
     details: list[ConflictDetail]
+    # soft-goal metrics of this timetable (see quality.measure) and their weighted total
+    quality: dict[str, int]
+    penalty: int
 
 
 def _attachment(filename: str) -> dict[str, str]:
@@ -62,10 +66,13 @@ def _attachment(filename: str) -> dict[str, str]:
 
 def _report(inst: Institution, tt: Timetable) -> ConflictReport:
     details = find_conflict_details(inst, tt)
+    metrics = measure(inst, tt)
     return ConflictReport(
         ok=not details,
         conflicts=[d.message for d in details],
         details=[ConflictDetail(message=d.message, offering_ids=list(d.offering_ids)) for d in details],
+        quality=metrics,
+        penalty=score(inst.weights, metrics),
     )
 
 

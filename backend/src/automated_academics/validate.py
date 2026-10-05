@@ -27,6 +27,7 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
     faculty = {f.id: f for f in inst.faculty}
     out: list[Conflict] = []
     seen: dict[tuple[str, str, int, int], str] = {}
+    clashes: dict[tuple, list[str]] = defaultdict(list)
     fac_load: dict[tuple[str, int], int] = defaultdict(int)
     fac_offerings: dict[tuple[str, int], set[str]] = defaultdict(set)
 
@@ -73,14 +74,19 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
             for kind, ident in keys:
                 k = (kind, ident, p.day, t)
                 if k in seen and seen[k] != p.offering_id:
-                    out.append(Conflict(
-                        f"clash {kind}:{ident} day {p.day} lecture {t}: {seen[k]} vs {p.offering_id}",
-                        (seen[k], p.offering_id)))
+                    clashes[(kind, seen[k], p.offering_id, p.day, t)].append(ident)
                 elif k in seen:
-                    out.append(Conflict(
-                        f"clash {kind}:{ident} day {p.day} lecture {t}: {p.offering_id} overlaps itself",
-                        (p.offering_id,)))
+                    clashes[(kind, p.offering_id, None, p.day, t)].append(ident)
                 seen[k] = p.offering_id
+
+    # One real double-booking can hit several entities at once (a section and each of its lab
+    # groups, say); report it once, naming all of them.
+    for (kind, a, b, day, t), idents in clashes.items():
+        who = ", ".join(idents)
+        if b is None:
+            out.append(Conflict(f"clash {kind}:{who} day {day} lecture {t}: {a} overlaps itself", (a,)))
+        else:
+            out.append(Conflict(f"clash {kind}:{who} day {day} lecture {t}: {a} vs {b}", (a, b)))
 
     for key in expected.keys() - placed:
         out.append(Conflict(f"unplaced session {key[0]}#{key[1]}", (key[0],)))

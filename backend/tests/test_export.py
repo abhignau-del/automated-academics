@@ -18,7 +18,7 @@ from automated_academics.views import session_views
 @pytest.fixture(scope="module")
 def solved():
     inst = sample_institution()
-    return inst, solve(inst, time_limit_s=30)
+    return inst, solve(inst, time_limit_s=4)
 
 
 def sess(day, start, length, code="C1", oid="O1"):
@@ -174,7 +174,7 @@ def client(tmp_path):
 def solved_job(client, inst=None):
     inst = inst or sample_institution()
     iid = client.post("/institutions", json=inst.model_dump(mode="json")).json()["id"]
-    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 20}).json()["job_id"]
+    jid = client.post(f"/institutions/{iid}/solve", json={"time_limit_s": 4}).json()["job_id"]
     end = time.time() + 90
     while time.time() < end:
         job = client.get(f"/jobs/{jid}").json()

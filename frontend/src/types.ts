@@ -25,7 +25,10 @@ export interface Institution {
 export interface Placement {
   offering_id: string; session_index: number; day: number; start: number; length: number; room_id: string;
 }
-export interface Timetable { placements: Placement[]; status: string; penalty: number }
+export interface Timetable {
+  placements: Placement[]; status: string; penalty: number;
+  breakdown: Partial<Quality>; // soft-goal measures, filled in by the solver
+}
 
 export interface InstitutionSummary { id: string; name: string; created_at: string }
 export interface Job {
@@ -34,7 +37,14 @@ export interface Job {
 }
 
 export interface ConflictDetail { message: string; offering_ids: string[] }
-export interface ConflictReport { ok: boolean; conflicts: string[]; details: ConflictDetail[] }
+/** Soft-goal measures of a timetable. Lower is better; 0 is ideal. */
+export interface Quality {
+  repeat_course_day: number; batch_gaps: number; faculty_gaps: number; peak_day_load: number; avoid_slot: number;
+}
+export interface ConflictReport {
+  ok: boolean; conflicts: string[]; details: ConflictDetail[];
+  quality: Quality; penalty: number;
+}
 
 export interface UploadIssue { sheet: string; row: number | null; message: string }
 

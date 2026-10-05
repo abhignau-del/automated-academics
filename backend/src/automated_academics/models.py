@@ -62,7 +62,22 @@ class Faculty(BaseModel):
     name: str
     department: str
     unavailable: list[Slot] = []
+    # Soft preference: the solver tries not to schedule this person here, but may if it must.
+    avoid: list[Slot] = []
     max_lectures_per_day: int = Field(default=6, ge=1)
+
+
+class Weights(BaseModel):
+    """Relative importance of the soft goals. Higher means the solver works harder to satisfy it.
+
+    Set a weight to 0 to ignore that goal. Names match the metrics in `quality.measure`.
+    """
+
+    repeat_course_day: int = Field(default=5, ge=0)  # per extra session of one course on the same day
+    batch_gaps: int = Field(default=10, ge=0)  # per idle lecture inside a class's day
+    faculty_gaps: int = Field(default=3, ge=0)  # per idle lecture inside a faculty member's day
+    peak_day_load: int = Field(default=4, ge=0)  # per lecture on a class's busiest day (spreads the week)
+    avoid_slot: int = Field(default=6, ge=0)  # per lecture a faculty member asked to avoid
 
 
 class Batch(BaseModel):
@@ -114,6 +129,7 @@ class Institution(BaseModel):
     batches: list[Batch]
     courses: list[Course]
     offerings: list[Offering]
+    weights: Weights = Weights()
 
     @model_validator(mode="after")
     def _references_exist(self) -> "Institution":
@@ -139,6 +155,15 @@ class Institution(BaseModel):
         out.update(b.id for b in self.batches if b.group_of in out)
         return out
 
+    def leaf_batches(self) -> list[str]:
+        """Batches whose schedule is what a student actually experiences: those with no sub-groups.
+
+        A section split into lab groups is represented by its groups (each group's day includes
+        the parent's lectures), so the parent itself is skipped.
+        """
+        parents = {b.group_of for b in self.batches if b.group_of}
+        return [b.id for b in self.batches if b.id not in parents]
+
 
 class Placement(BaseModel):
     offering_id: str
@@ -153,3 +178,5 @@ class Timetable(BaseModel):
     placements: list[Placement]
     status: str
     penalty: int = 0
+    # Soft-goal metrics (see quality.measure); filled in by the solver.
+    breakdown: dict[str, int] = {}

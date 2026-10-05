@@ -20,6 +20,36 @@ from .models import (
 DEPARTMENTS = {"CS": "Computer Science", "MG": "Management"}
 
 
+def scaled_institution(copies: int) -> Institution:
+    """`copies` independent copies of the sample institution (ids suffixed ~0, ~1, ...).
+
+    Used to measure how the solver scales: 1 copy is about 68 weekly sessions, 4 copies is about
+    a large department's worth. Copies share nothing, so the optimum is `copies` times the sample's.
+    """
+    base = sample_institution()
+    if copies == 1:
+        return base
+    pools: dict[str, list] = {k: [] for k in ("rooms", "faculty", "batches", "courses", "offerings")}
+    for n in range(copies):
+        data = base.model_dump(mode="json")
+        ids = {r["id"] for k in ("rooms", "faculty", "batches", "offerings") for r in data[k]}
+        ids |= {c["code"] for c in data["courses"]}
+
+        def suffix(x, tag=f"~{n}"):
+            if isinstance(x, str):
+                return x + tag if x in ids else x
+            if isinstance(x, list):
+                return [suffix(y) for y in x]
+            if isinstance(x, dict):
+                return {a: suffix(b) for a, b in x.items()}
+            return x
+
+        data = suffix(data)
+        for k in pools:
+            pools[k] += data[k]
+    return Institution(name=f"{base.name} x{copies}", calendar=base.calendar, weights=base.weights, **pools)
+
+
 def sample_institution() -> Institution:
     rooms = [Room(id=f"C{i}", name=f"Classroom {i}", capacity=70) for i in range(1, 5)]
     rooms += [Room(id=f"L{i}", name=f"Lab {i}", capacity=40, kind=RoomKind.LAB) for i in range(1, 3)]
@@ -35,6 +65,8 @@ def sample_institution() -> Institution:
                     department=dept,
                     # one fixed day-off lecture per faculty to exercise availability
                     unavailable=[Slot(day=n % 6, lecture=0)],
+                    # a soft preference: nobody wants the last two lectures on Saturday
+                    avoid=[Slot(day=5, lecture=5), Slot(day=5, lecture=6)],
                 )
             )
 

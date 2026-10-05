@@ -2,9 +2,10 @@
 
 Workbook layout (one header row, then data rows; header names are case-insensitive):
 
-  Institution : key | value        (name, day_names, lectures_per_day, break_after)
+  Institution : key | value        (name, day_names, lectures_per_day, break_after,
+                                    and optional weight_<goal> rows, see below)
   Rooms       : id, name, capacity, kind
-  Faculty     : id, name, department, max_lectures_per_day, unavailable
+  Faculty     : id, name, department, max_lectures_per_day, unavailable, avoid
   Batches     : id, program, level, semester, section, department, strength, group_of
   Courses     : code, name, department, credits, category, room_kind
   Offerings   : id, course_code, faculty_id, batch_ids, sessions
@@ -12,6 +13,11 @@ Workbook layout (one header row, then data rows; header names are case-insensiti
 For humans, lectures are numbered from 1 and days are written by name:
   unavailable = "Mon:1, Tue:3"   batch_ids = "CS-UG1, MG-UG1"   sessions = "1,1,1" or "2"
 `break_after` is likewise 1-based: "4" means a break after the 4th lecture.
+
+`unavailable` is a hard rule; `avoid` (same format, optional column) is a preference the solver
+honours when it can. Optional Institution rows `weight_batch_gaps`, `weight_faculty_gaps`,
+`weight_peak_day_load`, `weight_repeat_course_day` and `weight_avoid_slot` set how much each
+soft goal matters (whole numbers, 0 switches a goal off; blank uses the default).
 """
 
 from __future__ import annotations
@@ -37,11 +43,13 @@ from .models import (
     Room,
     RoomKind,
     Slot,
+    Weights,
 )
+from .quality import METRICS
 
 SHEETS: dict[str, list[str]] = {
     "Rooms": ["id", "name", "capacity", "kind"],
-    "Faculty": ["id", "name", "department", "max_lectures_per_day", "unavailable"],
+    "Faculty": ["id", "name", "department", "max_lectures_per_day", "unavailable", "avoid"],
     "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of"],
     "Courses": ["code", "name", "department", "credits", "category", "room_kind"],
     "Offerings": ["id", "course_code", "faculty_id", "batch_ids", "sessions"],
@@ -139,20 +147,30 @@ def _collect(ws, sheet: str, issues: list[ImportIssue], build: Callable[[dict], 
     return out
 
 
-def _calendar(ws, issues: list[ImportIssue]) -> tuple[str, Calendar]:
+def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
     kv = {}
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row and _text(row[0]):
             kv[_text(row[0]).lower()] = row[1] if len(row) > 1 else None
     name = _text(kv.get("name")) or "Institution"
+    cal, weights = Calendar(), Weights()
     try:
         days = _split(kv.get("day_names")) or Calendar().day_names
         lectures = _int(kv.get("lectures_per_day") or 7, "lectures_per_day")
         breaks = [_int(b, "break_after") - 1 for b in _split(kv.get("break_after"))]
-        return name, Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks)
+        cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks)
     except (ValueError, ValidationError) as e:
         issues.append(ImportIssue("Institution", None, str(e)))
-        return name, Calendar()
+    try:
+        given = {m: _int(kv[f"weight_{m}"], f"weight_{m}") for m in METRICS
+                 if _text(kv.get(f"weight_{m}")) != ""}
+        weights = Weights(**given)
+    except ValidationError as e:
+        issues.append(ImportIssue("Institution", None,
+                                  "; ".join(f"weight: {err['msg']}" for err in e.errors())))
+    except ValueError as e:
+        issues.append(ImportIssue("Institution", None, str(e)))
+    return name, cal, weights
 
 
 def import_workbook(path: str | Path | BinaryIO) -> Institution:
@@ -163,18 +181,18 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
     if absent:
         raise ImportErrors([ImportIssue(s, None, "sheet not found") for s in absent])
 
-    name, cal = _calendar(wb["Institution"], issues)
+    name, cal, weights = _settings(wb["Institution"], issues)
     day_index = {d.lower(): i for i, d in enumerate(cal.day_names)}
 
-    def slots(v: Any) -> list[Slot]:
+    def slots(v: Any, field: str) -> list[Slot]:
         out = []
         for tok in _split(v):
             day, _, per = tok.partition(":")
             if day.strip().lower() not in day_index or not per.strip():
-                raise ValueError(f"unavailable entry {tok!r} must look like 'Mon:1'")
-            p = _int(per, "unavailable lecture")
+                raise ValueError(f"{field} entry {tok!r} must look like 'Mon:1'")
+            p = _int(per, f"{field} lecture")
             if not 1 <= p <= cal.lectures_per_day:
-                raise ValueError(f"unavailable lecture {p} outside 1..{cal.lectures_per_day}")
+                raise ValueError(f"{field} lecture {p} outside 1..{cal.lectures_per_day}")
             out.append(Slot(day=day_index[day.strip().lower()], lecture=p - 1))
         return out
 
@@ -185,7 +203,7 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
     faculty = _collect(wb["Faculty"], "Faculty", issues, lambda r: Faculty(
         id=_text(r["id"]), name=_text(r["name"]), department=_text(r["department"]),
         max_lectures_per_day=_int(r.get("max_lectures_per_day") or 6, "max_lectures_per_day"),
-        unavailable=slots(r.get("unavailable"))))
+        unavailable=slots(r.get("unavailable"), "unavailable"), avoid=slots(r.get("avoid"), "avoid")))
 
     batches = _collect(wb["Batches"], "Batches", issues, lambda r: Batch(
         id=_text(r["id"]), program=_text(r["program"]), level=_enum(Level, r["level"], "level"),
@@ -216,8 +234,8 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
     if issues:
         raise ImportErrors(issues)
     try:
-        return Institution(name=name, calendar=cal, rooms=rooms, faculty=faculty,
-                           batches=batches, courses=courses, offerings=offerings)
+        return Institution(name=name, calendar=cal, rooms=rooms, faculty=faculty, batches=batches,
+                           courses=courses, offerings=offerings, weights=weights)
     except ValidationError as e:  # cross-sheet references
         raise ImportErrors([ImportIssue("Offerings/Batches", None, err["msg"].removeprefix("Value error, "))
                             for err in e.errors()]) from None
@@ -258,6 +276,8 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     ws.append(["day_names", ", ".join(cal.day_names)])
     ws.append(["lectures_per_day", cal.lectures_per_day])
     ws.append(["break_after", ", ".join(str(b + 1) for b in cal.break_after)])
+    for m in METRICS:
+        ws.append([f"weight_{m}", getattr(inst.weights, m)])
     _style(ws)
 
     def sheet(title: str, rows: list[list]) -> Any:
@@ -269,9 +289,11 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
         return w
 
     sheet("Rooms", [[r.id, r.name, r.capacity, r.kind.value] for r in inst.rooms])
+    def slot_text(slots: list[Slot]) -> str:
+        return ", ".join(f"{cal.day_names[s.day]}:{s.lecture + 1}" for s in slots)
+
     sheet("Faculty", [[f.id, f.name, f.department, f.max_lectures_per_day,
-                       ", ".join(f"{cal.day_names[s.day]}:{s.lecture + 1}" for s in f.unavailable)]
-                      for f in inst.faculty])
+                       slot_text(f.unavailable), slot_text(f.avoid)] for f in inst.faculty])
     sheet("Batches", [[b.id, b.program, b.level.value, b.semester, b.section, b.department,
                        b.strength, b.group_of or ""] for b in inst.batches])
     sheet("Courses", [[c.code, c.name, c.department, c.credits, c.category, c.room_kind.value]

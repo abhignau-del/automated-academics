@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased (solver quality)
+
+**Timetable quality.** The solver now minimises five weighted soft goals instead of one: idle gaps
+in each class's day, idle gaps in each teacher's day, the busiest-day load per class (an even week),
+repeated courses on one day, and lectures in slots a teacher asked to avoid. On the sample
+institution, class idle gaps went 67 to 0, teacher idle gaps 39 to 0, busiest-day load 29 to 20,
+and the weighted penalty 903 to 80.
+
+- New optional `Faculty.avoid` slots (soft; `unavailable` stays hard) and `Institution.weights`.
+  Excel: optional `avoid` column on `Faculty` and `weight_*` rows on `Institution`. Workbooks without
+  them still import.
+- `quality.measure`: an independent measurement of these goals (written separately from the
+  solver, like the clash validator). A test checks the solver's own objective equals it.
+- The Quality panel in the UI and the `quality` / `penalty` fields of `POST .../validate` score a
+  timetable live while you edit, with the change against the saved version.
+- One double-booking is now reported once, even when it hits a section and its lab groups.
+
+**Solver rewrite for scale.** The v0.1.0 formulation created a variable per (session, slot, room)
+and did not scale: a 272-session instance found no timetable in a minute. It now uses a start slot
+per session with separate room choice and no-overlap constraints, finds a valid timetable first and
+improves it, and turns off two CP-SAT preprocessing steps that took 55 of 61 seconds. Result: a
+valid timetable in ~5 s at 272 sessions and ~90 s at 1,088 (see the README for measured quality
+against time). Any time limit now returns a valid timetable; before, short limits could return an error.
+
+- `time_limit_s` may now be up to 900 s (was 300), and the UI offers 5, 10 and 15 minute options.
+- `scaled_institution(n)` builds n copies of the sample institution for scale tests.
+- Test suite: 67 backend tests in about 90 s (the first version of these changes took 5 minutes).
+
 ## v0.1.0 (2026-10-04)
 
 First release.
