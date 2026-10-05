@@ -192,9 +192,22 @@ saving), and `GET /institutions/{id}/latest-job` finds the newest finished timet
 Lectures in API responses are zero-based. There is **no authentication yet**: run it on localhost
 or behind your own access control, not directly on the public internet.
 
+## Starting the app with a double-click (Windows)
+
+After the one-time setup in *Quick start*, you never need a terminal:
+
+- Double-click **`Start Automated Academics.bat`**. It starts everything, waits until it is ready (a few
+  seconds), and opens the app in your browser. Running it again is harmless.
+- Double-click **`Stop Automated Academics.bat`** when you are finished. Your data is kept.
+- For a Desktop icon, right-click either file and choose *Send to → Desktop (create shortcut)*.
+
+The first start installs the screen's components (needs internet, about a minute). If something goes wrong,
+the window says why and `logs\` has the details. Your data lives in `backend\automated_academics.db`.
+Stop only ends this app's own processes; if another program is using port 8000 or 5173 it is left alone.
+
 ## Running the web UI
 
-Requires Node.js 20+. In two terminals:
+Requires Node.js 20+. Or, to run it by hand, in two terminals:
 
 ```bash
 cd backend  && uvicorn automated_academics.api:create_app --factory --reload   # API on :8000
