@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased (solver quality)
+## v0.2.0 (2026-10-05)
+
+Solver quality and scale. Existing v0.1.0 workbooks and data keep working: the new `avoid` column
+and weights are optional and default sensibly.
 
 **Timetable quality.** The solver now minimises five weighted soft goals instead of one: idle gaps
 in each class's day, idle gaps in each teacher's day, the busiest-day load per class (an even week),
