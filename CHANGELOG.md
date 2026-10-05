@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased (in-app data entry)
+
+You can now enter an institution's data in the browser instead of preparing an Excel workbook.
+
+- **Data tab** with a table per section (settings and quality weights, rooms, faculty, classes, courses,
+  offerings), start-from-blank or copy-of-the-sample, and a clickable weekly availability grid per
+  teacher (free, would rather avoid, unavailable).
+- **Live validation** (`POST /institutions/check`): problems are located by section, row and field and
+  highlighted on the exact cell. Structural errors block saving; **impossible-to-schedule data** (a session
+  that no room can hold, a teacher with more lectures than free slots, a block that fits nowhere, a class
+  with more lectures than the week) is explained immediately and blocks Generate, not Save.
+- Renaming a teacher, course or class updates everything that refers to it; deleting a row says what
+  else it will remove; duplicate or blank ids are refused.
+- `PUT /institutions/{id}`, `DELETE /institutions/{id}`, `GET /institutions/starter`,
+  `GET /institutions/{id}/workbook.xlsx` (download the data as an Excel workbook that uploads again).
+  `POST /institutions` and uploads now also return diagnostics, and creation errors are located.
+- **Out-of-date timetables:** editing data marks an existing timetable `stale` (only when the data really
+  changed); the UI says so and holds back exports until it is regenerated.
+- Existing SQLite databases are migrated in place (new `updated_at` column); no action needed.
+- Tests: 25 new backend tests (checks, diagnostics, endpoints, migration) and 21 new frontend tests for the
+  editing logic. A scripted real-browser run of the whole journey (blank institution to generated timetable,
+  36 checks) passed; it is not part of CI.
+
 ## v0.2.0 (2026-10-05)
 
 Solver quality and scale. Existing v0.1.0 workbooks and data keep working: the new `avoid` column

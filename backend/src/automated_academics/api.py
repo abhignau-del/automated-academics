@@ -16,14 +16,15 @@ import re
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
+from .checks import check_institution, diagnose
 from .excel_io import ImportErrors, export_workbook, import_workbook
 from .export import build_pdf, build_xlsx
 from .models import Institution, Timetable
@@ -111,6 +112,11 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(404, "job not found")
         return job
 
+    def with_stale(job: dict) -> dict:
+        """Add `stale`: the institution's data was edited after this timetable was generated."""
+        updated = store.institution_updated_at(job["institution_id"])
+        return {**job, "stale": updated is not None and job["created_at"] < updated}
+
     def run_job(jid: str, inst: Institution, limit: float) -> None:
         store.set_running(jid)
         try:
@@ -141,9 +147,62 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     def list_institutions():
         return store.list_institutions()
 
+    @app.get("/institutions/starter", response_model=Institution)
+    def starter(kind: Literal["blank", "sample"] = "blank"):
+        """Data to start a new institution from: an empty one, or the fictional sample."""
+        if kind == "sample":
+            return sample_institution()
+        return Institution(name="New institution", rooms=[], faculty=[], batches=[], courses=[], offerings=[])
+
+    @app.post("/institutions/check")
+    def check_draft(data: dict[str, Any] = Body(...)):
+        """Check institution data without saving it, for live feedback while it is being edited.
+
+        `valid` says whether it can be saved; `issues` are located by section and row.
+        Impossible-to-schedule data is reported as errors but does not make it invalid.
+        """
+        inst, issues = check_institution(data)
+        if inst is not None:
+            issues = diagnose(inst)
+        return {"valid": inst is not None, "issues": [i.as_dict() for i in issues]}
+
+    def _valid_or_422(data: dict[str, Any]) -> tuple[Institution, list[dict]]:
+        inst, issues = check_institution(data)
+        if inst is None:
+            raise HTTPException(422, detail={
+                "message": f"{len(issues)} problem(s) in the data",
+                "issues": [i.as_dict() for i in issues],
+            })
+        return inst, [i.as_dict() for i in diagnose(inst)]
+
     @app.post("/institutions", status_code=201)
-    def create_institution(inst: Institution):
-        return {"id": store.add_institution(inst), "name": inst.name}
+    def create_institution(data: dict[str, Any] = Body(...)):
+        inst, notes = _valid_or_422(data)
+        return {"id": store.add_institution(inst), "name": inst.name, "issues": notes}
+
+    @app.put("/institutions/{iid}")
+    def update_institution(iid: str, data: dict[str, Any] = Body(...)):
+        """Replace an institution's data. Existing timetables are kept but become `stale`."""
+        institution_or_404(iid)
+        inst, notes = _valid_or_422(data)
+        store.update_institution(iid, inst)
+        return {"id": iid, "name": inst.name, "issues": notes}
+
+    @app.get("/institutions/{iid}/workbook.xlsx")
+    def institution_workbook(iid: str):
+        """The saved data as an Excel workbook in the same format the upload accepts: a backup, or a
+        way to share it. (Not the timetable; see /jobs/{id}/export.xlsx for that.)"""
+        inst = institution_or_404(iid)
+        buf = io.BytesIO()
+        export_workbook(inst, buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type=XLSX, headers=_attachment(f"{inst.name}-data.xlsx"))
+
+    @app.delete("/institutions/{iid}", status_code=204)
+    def delete_institution(iid: str):
+        """Permanently delete an institution and all of its timetables."""
+        if not store.delete_institution(iid):
+            raise HTTPException(404, "institution not found")
 
     @app.post("/institutions/upload", status_code=201)
     def upload_institution(file: UploadFile = File(...)):
@@ -159,7 +218,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             }) from None
         except (zipfile.BadZipFile, KeyError, OSError):
             raise HTTPException(400, "not a valid .xlsx workbook") from None
-        return {"id": store.add_institution(inst), "name": inst.name}
+        return {"id": store.add_institution(inst), "name": inst.name, "issues": [i.as_dict() for i in diagnose(inst)]}
 
     @app.get("/institutions/{iid}", response_model=Institution)
     def get_institution(iid: str):
@@ -184,12 +243,12 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         job = store.latest_done_job(iid)
         if job is None:
             raise HTTPException(404, "no finished timetable for this institution yet")
-        return job
+        return with_stale(job)
 
     # ---------------- jobs and timetables ----------------
     @app.get("/jobs/{jid}")
     def get_job(jid: str):
-        return job_or_404(jid)
+        return with_stale(job_or_404(jid))
 
     @app.get("/jobs/{jid}/timetable", response_model=Timetable)
     def get_timetable(jid: str):

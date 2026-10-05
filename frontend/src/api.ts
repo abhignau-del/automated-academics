@@ -1,5 +1,6 @@
 import type {
-  ConflictReport, Institution, InstitutionSummary, Job, Timetable, UploadIssue, ViewKind,
+  CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Timetable, UploadIssue,
+  ViewKind,
 } from "./types";
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
@@ -31,6 +32,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch { /* keep statusText */ }
     throw new ApiError(res.status, message, issues);
   }
+  if (res.status === 204) return undefined as T; // e.g. DELETE: success with no body
   return res.json() as Promise<T>;
 }
 
@@ -48,6 +50,25 @@ export function uploadInstitution(file: File) {
   form.append("file", file);
   return request<{ id: string; name: string }>("/institutions/upload", { method: "POST", body: form });
 }
+
+// ---- data entry ----
+
+/** Empty institution or the fictional sample, to start a new one from. */
+export const starterInstitution = (kind: "blank" | "sample") =>
+  request<Institution>(`/institutions/starter?kind=${kind}`);
+
+/** Check data without saving it. `valid` means it can be saved; issues are located by section and row. */
+export const checkInstitution = (inst: Institution) =>
+  request<CheckResult>("/institutions/check", json("POST", inst));
+
+export const createInstitution = (inst: Institution) =>
+  request<{ id: string; name: string; issues: DataIssue[] }>("/institutions", json("POST", inst));
+export const updateInstitution = (id: string, inst: Institution) =>
+  request<{ id: string; name: string; issues: DataIssue[] }>(`/institutions/${id}`, json("PUT", inst));
+/** The saved data as an Excel workbook (same format as the upload). */
+export const workbookUrl = (id: string) => `${API_BASE}/institutions/${id}/workbook.xlsx`;
+export const deleteInstitution = (id: string) =>
+  request<void>(`/institutions/${id}`, { method: "DELETE" });
 
 export const startSolve = (iid: string, timeLimit: number) =>
   request<{ job_id: string }>(`/institutions/${iid}/solve`, json("POST", { time_limit_s: timeLimit }));

@@ -17,7 +17,8 @@ from .models import Institution, Timetable
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS institutions (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, data TEXT NOT NULL
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, data TEXT NOT NULL,
+    updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY, institution_id TEXT NOT NULL REFERENCES institutions(id),
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # microseconds, so an edit made right after a solve starts still sorts after it
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _new_id() -> str:
@@ -40,6 +42,11 @@ class Store:
         self.path = str(path)
         with self._conn() as c:
             c.executescript(_SCHEMA)
+            # databases created before in-app editing have no updated_at column
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(institutions)")}
+            if "updated_at" not in cols:
+                c.execute("ALTER TABLE institutions ADD COLUMN updated_at TEXT")
+            c.execute("UPDATE institutions SET updated_at = created_at WHERE updated_at IS NULL")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -53,10 +60,10 @@ class Store:
 
     # ---- institutions ----
     def add_institution(self, inst: Institution) -> str:
-        iid = _new_id()
+        iid, now = _new_id(), _now()
         with self._conn() as c:
-            c.execute("INSERT INTO institutions VALUES (?,?,?,?)",
-                      (iid, inst.name, _now(), inst.model_dump_json()))
+            c.execute("INSERT INTO institutions (id, name, created_at, updated_at, data) VALUES (?,?,?,?,?)",
+                      (iid, inst.name, now, now, inst.model_dump_json()))
         return iid
 
     def get_institution(self, iid: str) -> Institution | None:
@@ -64,9 +71,36 @@ class Store:
             row = c.execute("SELECT data FROM institutions WHERE id=?", (iid,)).fetchone()
         return Institution.model_validate_json(row["data"]) if row else None
 
+    def update_institution(self, iid: str, inst: Institution) -> bool:
+        """Replace an institution's data. Returns False if it does not exist.
+
+        `updated_at` only moves when the data actually changed, so saving an unchanged form does
+        not make existing timetables look out of date.
+        """
+        data = inst.model_dump_json()
+        with self._conn() as c:
+            row = c.execute("SELECT data FROM institutions WHERE id=?", (iid,)).fetchone()
+            if row is None:
+                return False
+            if row["data"] != data:
+                c.execute("UPDATE institutions SET name=?, data=?, updated_at=? WHERE id=?",
+                          (inst.name, data, _now(), iid))
+        return True
+
+    def delete_institution(self, iid: str) -> bool:
+        """Delete an institution and all its timetables. Returns False if it does not exist."""
+        with self._conn() as c:
+            c.execute("DELETE FROM jobs WHERE institution_id=?", (iid,))
+            return c.execute("DELETE FROM institutions WHERE id=?", (iid,)).rowcount > 0
+
+    def institution_updated_at(self, iid: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute("SELECT updated_at FROM institutions WHERE id=?", (iid,)).fetchone()
+        return row["updated_at"] if row else None
+
     def list_institutions(self) -> list[dict[str, Any]]:
         with self._conn() as c:
-            rows = c.execute("SELECT id, name, created_at FROM institutions "
+            rows = c.execute("SELECT id, name, created_at, updated_at FROM institutions "
                              "ORDER BY created_at DESC, rowid DESC").fetchall()
         return [dict(r) for r in rows]
 

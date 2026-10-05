@@ -4,10 +4,11 @@ Open-source timetable generator for colleges and universities running UG and PG 
 It models the realities of Indian higher education (CBCS / NEP 2020) and uses a
 constraint solver (Google OR-Tools CP-SAT) to produce clash-free timetables.
 
-> **Status: v0.2.0** (see the [changelog](CHANGELOG.md)). The full loop works end to end: load an institution from Excel,
-> generate a clash-free timetable that is also compact and well balanced, view and edit it in the
-> browser with live clash and quality checking, and export to PDF and Excel. It has been tested on
-> fictional institutions only; see [Known limitations](#known-limitations) before using it with real data.
+> **Status: v0.2.0 released; `main` adds in-app data entry** (see the [changelog](CHANGELOG.md)). The
+> full loop works end to end: enter an institution's data in the browser (or load it from Excel),
+> generate a clash-free timetable that is also compact and well balanced, view and edit it with live
+> clash and quality checking, and export to PDF and Excel. It has been tested on fictional
+> institutions only; see [Known limitations](#known-limitations) before using it with real data.
 
 ![Generated timetable for one class, with a session selected and the Quality panel showing zero idle gaps](docs/screenshot-timetable.png)
 
@@ -109,6 +110,37 @@ tt = solve(inst, time_limit_s=30)
 print(tt.status, len(tt.placements), find_conflicts(inst, tt))
 ```
 
+## Entering data in the app
+
+You don't need a spreadsheet. In the web UI choose **+ New → Blank institution** (or *Copy of the
+sample* to see a worked example) and fill in the **Data** tab:
+
+- **Settings:** name, the days, lectures per day, where the breaks fall, and how much each quality goal matters
+- **Rooms, Faculty, Classes, Courses, Offerings:** one table each. An *offering* is one course taught by one
+  person to one or more classes (several for a shared elective); *sessions* are lectures per week, so `1, 1, 1`
+  is three one-lecture sessions and `2` is one two-lecture lab block
+- **Availability:** each teacher has a clickable week. One click marks a slot "would rather avoid", two make it
+  unavailable, three clear it; click a day or lecture heading to block a whole line
+
+![Entering offerings; the editor explains that two 40-student classes can't share a 60-seat classroom](docs/screenshot-data-offerings.png)
+
+![A teacher's availability grid: Wednesday blocked, Monday first lecture unavailable, Friday last lecture to avoid](docs/screenshot-data-availability.png)
+
+The editor checks your data as you type, and every problem is shown on the exact row and cell:
+
+- **Errors that stop you saving** (a blank or duplicate id, a number out of range, an offering that names a
+  teacher or course that doesn't exist). Saving is disabled until they're fixed.
+- **Impossible data that you *can* save** while you keep working, flagged with the reason: a session needing a
+  classroom bigger than any you have, a teacher with more lectures than free slots, a class with more lectures
+  than the week holds. **Generate** stays disabled until these are fixed, so you get the explanation now instead
+  of a failed solve later.
+- **Warnings and notes:** unused courses or teachers, a class with no lectures, slots outside the week.
+
+Renaming an id (a teacher, course or class) updates everything that refers to it. Deleting a row tells you what
+else it will take with it before you confirm. Editing the data marks an existing timetable as out of date, and
+exports are held back until you regenerate it. **Download Excel** saves the data as a workbook you can keep as a
+backup or upload again.
+
 ## Loading your own data from Excel
 
 Start from [docs/institution-template.xlsx](docs/institution-template.xlsx) (fictional sample data)
@@ -142,7 +174,12 @@ Interactive docs at <http://127.0.0.1:8000/docs>. Data is kept in a local SQLite
 |---|---|
 | `GET /institutions/template` | Download the Excel template |
 | `POST /institutions/upload` | Upload a workbook. Returns `201` with an id, or `422` listing every sheet/row problem |
-| `POST /institutions` | Create from JSON; `GET /institutions`, `GET /institutions/{id}` |
+| `POST /institutions` | Create from JSON (`422` with located problems if invalid); `GET /institutions`, `GET /institutions/{id}` |
+| `PUT /institutions/{id}` | Replace an institution's data. Existing timetables are kept but reported as `stale` |
+| `DELETE /institutions/{id}` | Permanently delete an institution and all its timetables |
+| `POST /institutions/check` | Check data without saving it: `valid`, and problems located by section and row |
+| `GET /institutions/starter?kind=blank\|sample` | Starting data for a new institution |
+| `GET /institutions/{id}/workbook.xlsx` | The saved data as an Excel workbook (re-uploadable) |
 | `POST /institutions/{id}/solve` | Start a background solve (`time_limit_s` 1-900); returns a `job_id` |
 | `GET /jobs/{id}` | Poll status: `queued`, `running`, `done` or `failed` (with `error`) |
 | `GET /jobs/{id}/timetable` | The generated timetable |
@@ -164,8 +201,8 @@ cd backend  && uvicorn automated_academics.api:create_app --factory --reload   #
 cd frontend && npm install && npm run dev                                      # UI on :5173
 ```
 
-Open <http://localhost:5173>, upload your workbook (or the template), select the institution and
-press **Generate timetable**. Then:
+Open <http://localhost:5173>, start a new institution (or upload a workbook), select it and press
+**Generate timetable**. Then:
 
 - switch between **Class**, **Faculty** and **Room** weeks
 - **drag a session** to another slot; the server re-checks clashes after every change and sessions
@@ -203,7 +240,10 @@ font such as Noto Sans.
 
 - **Tested on synthetic data only.** Real institutions have rules this does not model yet
   (see the roadmap). Try it on a copy of your data and check the result before relying on it.
-- **Data comes from Excel.** There is no in-app editing of rooms, faculty or courses yet.
+- **The data editor is basic.** Tables are edited cell by cell: no paste-in from a spreadsheet (upload a
+  workbook for bulk data), no undo beyond *Discard*, and it hasn't been tried with thousands of rows.
+  Saving replaces the whole institution, so two people editing at once would overwrite each other
+  (last save wins).
 - **No authentication.** Run it on localhost or behind your own access control.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
 - **Clash messages are technical** (zero-based day and lecture numbers), and a clash highlights
@@ -225,7 +265,8 @@ font such as Noto Sans.
 - [x] FastAPI service with SQLite persistence and background solving
 - [x] React UI: Excel upload, generate, class / faculty / room views
 - [x] Drag-and-drop editing with live clash detection, undo and save
-- [ ] In-app data entry (today data comes from the Excel workbook)
+- [x] In-app data entry with live validation, impossible-data diagnostics and Excel round trip
+- [ ] Spreadsheet-style editing: paste rows from Excel, bulk edit, undo history
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing

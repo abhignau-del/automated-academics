@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
+import { DataEditor } from "./DataEditor";
 import { Grid } from "./Grid";
 import { changeRoom, moveSession, placementsFor, sessionKey } from "./timetable";
 import type {
   ConflictReport, Institution, InstitutionSummary, Placement, Quality, UploadIssue, ViewKind,
 } from "./types";
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sameList = (a: Placement[], b: Placement[]) => JSON.stringify(a) === JSON.stringify(b);
@@ -65,6 +67,12 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const [view, setView] = useState<"timetable" | "data">("timetable");
+  const [jobStale, setJobStale] = useState(false); // data was edited after the shown timetable was made
+  const [dataDirty, setDataDirty] = useState(false); // unsaved edits in the Data tab
+  const [dataErrors, setDataErrors] = useState(0); // problems in the saved data that block generating
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menuOpen) return;
@@ -85,30 +93,67 @@ export default function App() {
   useEffect(() => { refreshList(); }, [refreshList]);
 
   useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => { if (dirty) e.preventDefault(); };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => { if (dirty || dataDirty) e.preventDefault(); };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [dirty, dataDirty]);
+
+  /** Switching institutions would throw away unsaved data edits, so ask first. */
+  const selectInstitution = (id: string | null) => {
+    if (dataDirty && !confirm("You have unsaved changes to this institution's data. Discard them?")) return false;
+    setDataDirty(false);
+    setIid(id);
+    return true;
+  };
+
+  const countErrors = (i: Institution) =>
+    api.checkInstitution(i).then((r) => setDataErrors(r.issues.filter((x) => x.level === "error").length)).catch(() => setDataErrors(0));
+
+  /** After the Data tab saves: reload the data and ask the server whether the timetable is now out of date. */
+  async function reloadInstitution() {
+    if (!iid) return;
+    const fresh = await api.getInstitution(iid);
+    setInst(fresh);
+    countErrors(fresh);
+    refreshList();
+    if (jobId) setJobStale(!!(await api.getJob(jobId)).stale);
+  }
+
+  async function createNew(kind: "blank" | "sample") {
+    setNewMenuOpen(false);
+    if (dataDirty && !confirm("You have unsaved changes to this institution's data. Discard them?")) return;
+    try {
+      const created = await api.createInstitution(await api.starterInstitution(kind));
+      await refreshList();
+      setDataDirty(false);
+      setIid(created.id);
+      setView("data");
+    } catch (e) { fail(e); }
+  }
 
   // load the chosen institution and its latest saved timetable, if any
   useEffect(() => {
     const mine = ++epoch.current;
     setInst(null); setJobId(null); setPlacements([]); setSaved([]); setHistory([]);
-    setReport(null); setSelected(null); setError(null);
+    setReport(null); setSelected(null); setError(null); setJobStale(false); setDataErrors(0);
     if (!iid) return;
     (async () => {
       const i = await api.getInstitution(iid);
       if (mine !== epoch.current) return;
       setInst(i);
+      countErrors(i);
+      // a brand-new, empty institution has nothing to schedule yet: start in the Data tab
+      if (i.offerings.length === 0) setView("data");
       const job = await api.latestJob(iid);
-      if (job && mine === epoch.current) await loadTimetable(job.id, mine);
+      if (job && mine === epoch.current) await loadTimetable(job.id, mine, !!job.stale);
     })().catch(fail);
   }, [iid]);
 
-  async function loadTimetable(jid: string, mine = epoch.current) {
+  async function loadTimetable(jid: string, mine = epoch.current, stale = false) {
     const tt = await api.getTimetable(jid);
     if (mine !== epoch.current) return;
     setJobId(jid); setPlacements(tt.placements); setSaved(tt.placements); setHistory([]); setSelected(null);
+    setJobStale(stale);
   }
 
   // live clash checking: the server validator is the source of truth
@@ -167,8 +212,10 @@ export default function App() {
     if (!file) return;
     setError(null); setIssues([]);
     try {
+      if (dataDirty && !confirm("You have unsaved changes to this institution's data. Discard them?")) return;
       const r = await api.uploadInstitution(file);
       await refreshList();
+      setDataDirty(false);
       setIid(r.id);
     } catch (e) {
       if (e instanceof api.ApiError && e.issues.length) { setIssues(e.issues); setError(e.message); }
@@ -215,22 +262,33 @@ export default function App() {
       <aside>
         <h2>Institutions</h2>
         <div className="row">
-          <label className="btn primary">
+          <div className="menu">
+            <button className="btn primary" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen((o) => !o)}>
+              + New ▾
+            </button>
+            {newMenuOpen && (
+              <div className="menu-list left" role="menu">
+                <button role="menuitem" onClick={() => createNew("blank")}>Blank institution</button>
+                <button role="menuitem" onClick={() => createNew("sample")}>Copy of the sample</button>
+              </div>
+            )}
+          </div>
+          <label className="btn">
             Upload Excel
             <input type="file" accept=".xlsx" hidden onChange={(e) => { onUpload(e.target.files?.[0]); e.target.value = ""; }} />
           </label>
-          <a className="btn" href={api.templateUrl}>Template</a>
         </div>
+        <a className="muted small" href={api.templateUrl}>Download the Excel template</a>
         <ul className="inst-list">
           {list.map((i) => (
             <li key={i.id}>
-              <button className={i.id === iid ? "active" : ""} onClick={() => setIid(i.id)}>
+              <button className={i.id === iid ? "active" : ""} onClick={() => selectInstitution(i.id)}>
                 {i.name}<small>{new Date(i.created_at).toLocaleDateString()}</small>
               </button>
             </li>
           ))}
         </ul>
-        {!list.length && <p className="muted">No institutions yet. Download the template, fill it in, and upload it.</p>}
+        {!list.length && <p className="muted">No institutions yet. Start a blank one and enter your data here, or upload an Excel workbook.</p>}
       </aside>
 
       <main>
@@ -242,10 +300,38 @@ export default function App() {
           </table>
         )}
 
-        {!inst && !error && <p className="muted">Select or upload an institution to begin.</p>}
+        {!inst && !error && <p className="muted">Select an institution, start a new one, or upload a workbook to begin.</p>}
 
-        {inst && (
+        {inst && iid && (
           <>
+            <div className="viewtabs" role="tablist">
+              <button role="tab" aria-selected={view === "timetable"} className={view === "timetable" ? "active" : ""} onClick={() => setView("timetable")}>
+                Timetable
+              </button>
+              <button role="tab" aria-selected={view === "data"} className={view === "data" ? "active" : ""} onClick={() => setView("data")}>
+                Data
+                {(dataErrors > 0 || dataDirty) && (
+                  <span className={"badge" + (dataErrors > 0 ? "" : " soft")}>{dataErrors > 0 ? dataErrors : "•"}</span>
+                )}
+              </button>
+            </div>
+
+            {/* kept mounted (just hidden) so unsaved edits survive switching tabs */}
+            <div hidden={view !== "data"}>
+              <DataEditor iid={iid} institution={inst} onSaved={reloadInstitution} onDirtyChange={setDataDirty}
+                onDeleted={() => { setDataDirty(false); setView("timetable"); setIid(null); refreshList(); }} />
+            </div>
+          </>
+        )}
+
+        {inst && view === "timetable" && (
+          <>
+            {jobId && jobStale && (
+              <div className="alert stale" role="status">
+                The data was changed after this timetable was generated, so it may no longer match.
+                Regenerate it to apply your changes.
+              </div>
+            )}
             <div className="toolbar">
               <h2>{inst.name}</h2>
               <span className="muted">{inst.batches.length} batches · {inst.faculty.length} faculty · {inst.rooms.length} rooms · {inst.offerings.reduce((n, o) => n + o.sessions.length, 0)} sessions/week</span>
@@ -257,7 +343,11 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              <button className="btn primary" onClick={onSolve} disabled={solving}>
+              <button className="btn primary" onClick={onSolve}
+                disabled={solving || dataErrors > 0 || inst.offerings.length === 0 || dataDirty}
+                title={dataErrors > 0 ? `Fix the ${dataErrors} problem${dataErrors === 1 ? "" : "s"} in the Data tab first`
+                  : inst.offerings.length === 0 ? "Add some offerings in the Data tab first"
+                  : dataDirty ? "Save or discard your changes in the Data tab first" : undefined}>
                 {solving ? "Generating…" : jobId ? "Regenerate" : "Generate timetable"}
               </button>
             </div>
@@ -289,7 +379,9 @@ export default function App() {
                     </button>
                     {menuOpen && (
                       <div className="menu-list" role="menu">
-                        {dirty ? (
+                        {jobStale ? (
+                          <p className="muted">The data changed after this timetable was made. Regenerate it before exporting.</p>
+                        ) : dirty ? (
                           <p className="muted">Save your changes first. Exports use the saved timetable.</p>
                         ) : (
                           <>
