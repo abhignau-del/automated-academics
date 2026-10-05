@@ -4,7 +4,7 @@ Open-source timetable generator for colleges and universities running UG and PG 
 It models the realities of Indian higher education (CBCS / NEP 2020) and uses a
 constraint solver (Google OR-Tools CP-SAT) to produce clash-free timetables.
 
-> **Status: v0.2.0 released; `main` adds in-app data entry** (see the [changelog](CHANGELOG.md)). The
+> **Status: v0.3.0** (see the [changelog](CHANGELOG.md)). The
 > full loop works end to end: enter an institution's data in the browser (or load it from Excel),
 > generate a clash-free timetable that is also compact and well balanced, view and edit it with live
 > clash and quality checking, and export to PDF and Excel. It has been tested on fictional

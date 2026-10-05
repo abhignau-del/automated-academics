@@ -1,8 +1,17 @@
 # Changelog
 
-## Unreleased (in-app data entry)
+## v0.3.0 (2026-10-05)
 
-You can now enter an institution's data in the browser instead of preparing an Excel workbook.
+In-app data entry, and a double-click launcher for Windows. Existing data, workbooks and databases keep
+working (databases are migrated automatically when opened).
+
+**Double-click launcher (Windows).** `Start Automated Academics.bat` starts the engine and the screen,
+waits until both are ready and opens the browser; `Stop Automated Academics.bat` stops them. No terminal
+needed after the one-time setup. Stop only ends this app's own processes and leaves anything else using
+the same ports alone. See *Starting the app with a double-click* in the README.
+
+**In-app data entry.** You can now enter an institution's data in the browser instead of preparing an
+Excel workbook.
 
 - **Data tab** with a table per section (settings and quality weights, rooms, faculty, classes, courses,
   offerings), start-from-blank or copy-of-the-sample, and a clickable weekly availability grid per
