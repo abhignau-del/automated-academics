@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased (real-data workflow)
+## v0.4.0 (2026-10-06)
+
+Spreadsheet-style editing, importing a workload list, locking sessions, plain-language failure reasons and a
+Windows app that needs no setup. Existing data, workbooks and databases keep working (a workbook without a
+Pins sheet imports with no pins).
 
 - **Import a workload list** (New ▾ → Import a workload list…): the flat "subject, teacher, programme, hours
   per week" sheet many colleges already keep becomes a full institution. Headings are matched by name, classes
@@ -22,7 +26,7 @@
 - Tests: 21 workload-import tests, 14 pin and explanation tests, an API test, and a browser journey covering
   lock, regenerate, unlock and the failure message.
 
-## Unreleased (spreadsheet-style editing)
+### Spreadsheet-style editing
 
 - **Paste from Excel / Google Sheets**, into the cells (fills down and across, adds rows as needed) or via
   **Paste from spreadsheet…**, which recognises a heading row (columns matched by name in any order, existing
