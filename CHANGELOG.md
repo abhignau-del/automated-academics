@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Joint classes as a feature.** The Offerings tab suggests offerings of the same course and teacher for different
+  classes that may be taught together, and combines or splits them in one click (also for ticked rows). Combining
+  checks the course, teacher and classes match, keeps the busiest weekly hours, and warns when no room is big enough.
+
 ## v0.4.0 (2026-10-06)
 
 Spreadsheet-style editing, importing a workload list, locking sessions, plain-language failure reasons and a

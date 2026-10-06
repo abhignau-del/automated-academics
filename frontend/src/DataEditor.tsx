@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ClipboardEvent as ReactClipboardEvent } from "react";
 import * as api from "./api";
 import { addRow, formatSessions, hasImpact, ID_FIELD, impact, parseSessions, removeRow, renameId, type TableKey } from "./dataops";
+import { combine, isJoint, split, suggestJoint, type Result } from "./joint";
 import { canRedo, canUndo, initHistory, pushHistory, redo, undo, type History } from "./history";
 import { PasteDialog } from "./PasteDialog";
 import {
@@ -301,11 +302,50 @@ const ChoiceLists = memo(function ChoiceLists({ table, opts }: { table: TableKey
   );
 });
 
+// ------------------------------------------------------------------ joint classes
+
+function JointPanel({ inst, onCombine }: { inst: Institution; onCombine: (ids: string[]) => void }) {
+  const found = useMemo(() => suggestJoint(inst), [inst]);
+  const joint = inst.offerings.filter(isJoint).length;
+  const course = (code: string) => inst.courses.find((c) => c.code === code)?.name ?? code;
+  const teacher = (id: string) => inst.faculty.find((f) => f.id === id)?.name ?? id;
+  if (!found.length && !joint) return null;
+  return (
+    <details className="jointpanel" open={found.length > 0}>
+      <summary>
+        Joint classes: <b>{joint}</b> shared now{found.length > 0 && <>, <b>{found.length}</b> suggested</>}
+      </summary>
+      <p className="muted small">
+        A joint class is one offering attended by several classes together, such as a shared elective. These offerings
+        have the same course and teacher but separate classes. If they really meet together, combine them.
+      </p>
+      <ul className="pinlist">
+        {found.map((g) => {
+          const first = inst.offerings.find((o) => o.id === g.ids[0])!;
+          return (
+            <li key={g.ids.join("+")} className={g.roomFits ? "" : "bad"}>
+              <span>
+                <b>{course(first.course_code)}</b> by {teacher(first.faculty_id)}: {g.batchIds.join(", ")}
+                {" "}({g.students} students, {g.sessions.length} lecture{g.sessions.length === 1 ? "" : "s"} a week)
+              </span>
+              {!g.roomFits && <small className="error">no room holds everyone together</small>}
+              {g.sessionsDiffer && <small className="warning">their weekly lectures differ; the most is kept</small>}
+              <span className="spacer" />
+              <button type="button" className="btn small" onClick={() => onCombine(g.ids)}>Combine</button>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 // ------------------------------------------------------------------ bulk actions
 
-function BulkBar({ table, count, opts, onSet, onDuplicate, onDelete, onClear }: {
+function BulkBar({ table, count, opts, onSet, onDuplicate, onDelete, onClear, onCombine, onSplit }: {
   table: TableKey; count: number; opts: Record<string, Opt[]>;
   onSet: (key: string, text: string) => void; onDuplicate: () => void; onDelete: () => void; onClear: () => void;
+  onCombine?: () => void; onSplit?: () => void; // offerings only: make selected ones one joint class, or undo that
 }) {
   const columns = shownColumns(table).filter((c) => c.kind !== "id");
   const [key, setKey] = useState(columns[0]?.key ?? "");
@@ -335,6 +375,10 @@ function BulkBar({ table, count, opts, onSet, onDuplicate, onDelete, onClear }: 
           onClick={() => { onSet(key, text); }}>Apply</button>
       </span>
       <button type="button" className="btn small" onClick={onDuplicate}>Duplicate</button>
+      {onCombine && <button type="button" className="btn small" onClick={onCombine} disabled={count < 2}
+        title="Teach these together as one joint class (same course and teacher, different classes)">Combine as joint class</button>}
+      {onSplit && <button type="button" className="btn small" onClick={onSplit}
+        title="Give each class of a joint offering its own offering again">Split joint class</button>}
       <button type="button" className="btn small danger" onClick={onDelete}>Delete</button>
       <button type="button" className="linkish" onClick={onClear}>Clear selection</button>
     </div>
@@ -516,6 +560,20 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
     setDraft(inst);
     setSelected((s) => ({ ...s, [table]: newIds }));
   };
+  const applyJoint = (r: Result) => {
+    if ("error" in r) { setNotice(r.error); return; }
+    setNotice(r.note);
+    setDraft(r.inst);
+    setSelected((s) => ({ ...s, offerings: [r.kept] }));
+  };
+  const bulkSplit = () => {
+    const joint = idsOf("offerings").filter((id) => draftRef.current.offerings.some((o) => o.id === id && isJoint(o)));
+    if (!joint.length) { setNotice("None of the selected offerings is shared by several classes."); return; }
+    let inst = draftRef.current;
+    for (const id of joint) { const r = split(inst, id); if ("error" in r) { setNotice(r.error); return; } inst = r.inst; }
+    setNotice(null);
+    setDraft(inst);
+  };
   const bulkDelete = (table: TableKey) => {
     const ids = idsOf(table);
     const s = summariseRemoval(draftRef.current, table, ids);
@@ -587,6 +645,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
     return (
       <div className="tablewrap" onPaste={onTablePaste(table)} onKeyDown={onTableKeys}>
         {HELP[table] && <p className="muted small">{HELP[table]}</p>}
+        {table === "offerings" && <JointPanel inst={draft} onCombine={(ids) => applyJoint(combine(draftRef.current, ids))} />}
         <div className="tabletools">
           <input type="search" className="filter" placeholder={`Filter ${NOUN[table].many}…`} aria-label={`filter ${NOUN[table].many}`}
             value={filter} onChange={(e) => { setFilters({ ...filters, [table]: e.target.value }); setLimits({ ...limits, [table]: PAGE }); }} />
@@ -598,7 +657,9 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
         {ids.length > 0 && (
           <BulkBar table={table} count={ids.length} opts={tableOpts[table]}
             onSet={(key, text) => bulkApply(table, key, text)} onDuplicate={() => bulkDuplicate(table)} onDelete={() => bulkDelete(table)}
-            onClear={() => setSelected((s) => ({ ...s, [table]: [] }))} />
+            onClear={() => setSelected((s) => ({ ...s, [table]: [] }))}
+            onCombine={table === "offerings" ? () => applyJoint(combine(draftRef.current, idsOf(table))) : undefined}
+            onSplit={table === "offerings" ? bulkSplit : undefined} />
         )}
         <ChoiceLists table={table} opts={tableOpts[table]} />
 

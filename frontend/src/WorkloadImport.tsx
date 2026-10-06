@@ -90,7 +90,7 @@ export function WorkloadImport({ onCreated, onClose }: Props) {
           <label>Classrooms<input value={form.classrooms} onChange={set("classrooms")} placeholder="one per class" inputMode="numeric" /></label>
           <label>Seats each<input value={form.seats} onChange={set("seats")} placeholder="auto" inputMode="numeric" /></label>
           <label>Labs<input value={form.labs} onChange={set("labs")} inputMode="numeric" /></label>
-          <label title="Teach a subject to several programmes together when they have the same teacher and total this many students or fewer. 0 = never.">
+          <label title="Teach a subject to several programmes together when they have the same teacher and total this many students or fewer. 0 = never; you can also decide later, as the Data tab suggests joint classes.">
             Combine classes up to<input value={form.joint} onChange={set("joint")} inputMode="numeric" /></label>
           <label>Students if not given<input value={form.students} onChange={set("students")} inputMode="numeric" /></label>
         </div>

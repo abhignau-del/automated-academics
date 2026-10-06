@@ -136,6 +136,10 @@ sample* to see a worked example) and fill in the **Data** tab:
 - **Rooms, Faculty, Classes, Courses, Offerings:** one table each. An *offering* is one course taught by one
   person to one or more classes (several for a shared elective); *sessions* are lectures per week, so `1, 1, 1`
   is three one-lecture sessions and `2` is one two-lecture lab block
+- **Joint classes:** an offering attended by several classes together (a shared elective, or one subject taught
+  once to two programmes). On the Offerings tab, a **Joint classes** panel suggests offerings with the same course
+  and teacher for different classes, and **Combine** merges them (it warns if the weekly lectures differ or no room
+  holds everyone). Tick rows and use **Combine as joint class** / **Split joint class** to do it by hand.
 - **Availability:** each teacher has a clickable week. One click marks a slot "would rather avoid", two make it
   unavailable, three clear it; click a day or lecture heading to block a whole line
 

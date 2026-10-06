@@ -201,3 +201,8 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .pinlist .spacer { flex: 1; }
 .ghost { position: absolute; left: 2px; right: 2px; border-radius: 6px; background: rgba(46, 125, 50, .22); border: 2px dashed var(--good); pointer-events: none; z-index: 1; }
 .ghost.bad { background: rgba(198, 40, 40, .2); border-color: var(--bad); }
+
+.jointpanel { margin: 8px 0; padding: 6px 10px; border: 1px solid var(--line, #ccc); border-radius: 6px; }
+.jointpanel summary { cursor: pointer; }
+.pinlist small.error { color: var(--bad); }
+.pinlist small.warning { color: #8a6100; }
