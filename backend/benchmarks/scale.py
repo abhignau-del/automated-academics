@@ -2,6 +2,7 @@
 
     python benchmarks/scale.py 2 5 10 25 --limit 600          # departments per run, 8 classes each
     python benchmarks/scale.py 10 --goals --limit 300         # also improve against the soft goals
+    python benchmarks/scale.py 5 --whole                      # the all-at-once solver, for comparison
 
 Each size runs in its own process so its peak memory is its own. Without --goals only the hard rules are
 solved (the first valid timetable), which is the part that decides whether a size is feasible at all.
@@ -41,7 +42,8 @@ def peak_memory_mb() -> float:
         return c.PeakWorkingSetSize / 1024 / 1024
 
 
-def run_one(departments: int, classes: int, limit: float, goals: bool) -> dict:
+def run_one(departments: int, classes: int, limit: float, goals: bool, whole: bool) -> dict:
+    from automated_academics.decompose import solve_decomposed
     from automated_academics.models import Weights
     from automated_academics.solver import InfeasibleError, solve
     from automated_academics.synthetic import university_institution
@@ -55,7 +57,8 @@ def run_one(departments: int, classes: int, limit: float, goals: bool) -> dict:
            "teachers": len(inst.faculty), "rooms": len(inst.rooms)}
     t0 = time.monotonic()
     try:
-        tt = solve(inst, time_limit_s=limit, min_first_solution_s=limit)
+        tt = (solve(inst, time_limit_s=limit, min_first_solution_s=limit) if whole
+              else solve_decomposed(inst, time_limit_s=limit))
         out.update(status=tt.status, seconds=round(time.monotonic() - t0, 1), clashes=len(find_conflicts(inst, tt)),
                    penalty=tt.penalty if goals else None)
     except InfeasibleError as e:
@@ -70,14 +73,15 @@ def main() -> None:
     ap.add_argument("--classes", type=int, default=8, help="classes per department")
     ap.add_argument("--limit", type=float, default=300, help="seconds allowed per size")
     ap.add_argument("--goals", action="store_true", help="also optimise the soft goals (default: first valid timetable only)")
+    ap.add_argument("--whole", action="store_true", help="solve everything at once instead of department by department")
     ap.add_argument("--one", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
     if a.one:
-        print(json.dumps(run_one(a.departments[0], a.classes, a.limit, a.goals)))
+        print(json.dumps(run_one(a.departments[0], a.classes, a.limit, a.goals, a.whole)))
         return
     print(f"{'depts':>5} {'sessions':>8} {'teachers':>8} {'rooms':>5}  {'result':<10} {'seconds':>7} {'clashes':>7} {'peak MB':>8}")
     for d in a.departments:
-        cmd = [sys.executable, __file__, str(d), "--one", "--classes", str(a.classes), "--limit", str(a.limit)] + (["--goals"] if a.goals else [])
+        cmd = [sys.executable, __file__, str(d), "--one", "--classes", str(a.classes), "--limit", str(a.limit)] + (["--goals"] if a.goals else []) + (["--whole"] if a.whole else [])
         p = subprocess.run(cmd, capture_output=True, text=True)
         try:
             r = json.loads(p.stdout.strip().splitlines()[-1])

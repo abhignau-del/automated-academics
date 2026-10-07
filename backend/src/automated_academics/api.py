@@ -31,7 +31,8 @@ from .excel_io import ImportErrors, export_workbook, import_workbook
 from .export import build_pdf, build_xlsx
 from .models import Institution, Timetable
 from .explain import explain_message
-from .solver import InfeasibleError, Unsatisfiable, solve
+from .decompose import solve_auto
+from .solver import InfeasibleError, Unsatisfiable
 from .store import Store
 from .synthetic import sample_institution
 from .quality import measure, score
@@ -142,7 +143,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     def run_job(jid: str, inst: Institution, limit: float) -> None:
         store.set_running(jid)
         try:
-            store.finish_job(jid, solve(inst, time_limit_s=limit))
+            store.finish_job(jid, solve_auto(inst, time_limit_s=limit))
         except Unsatisfiable as e:  # proven impossible: say which of the user's constraints clash
             store.fail_job(jid, explain_message(inst, str(e)))
         except InfeasibleError as e:

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **University scale: department-by-department solving.** Institutions above 400 sessions are now solved one
+  department at a time (joint classes first), each around what is already placed, with a small pool of rooms
+  per department, then improved one department at a time. A fictional 10-department university (1,615
+  sessions) that found no timetable in 10 minutes now takes about 90 s, 25 departments (4,036 sessions)
+  about 3 minutes and 60 departments (9,690 sessions) about 15 minutes, all with no clashes. Smaller institutions still solve all at once. The solver can now schedule
+  part of an institution around fixed placements, and `backend/benchmarks/scale.py` measures it.
 - **Joint classes as a feature.** The Offerings tab suggests offerings of the same course and teacher for different
   classes that may be taught together, and combines or splits them in one click (also for ticked rows). Combining
   checks the course, teacher and classes match, keeps the busiest weekly hours, and warns when no room is big enough.

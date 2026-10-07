@@ -86,7 +86,29 @@ one needs time that grows faster than the size of the problem. As a rule of thum
 10 s for a small department, a minute or two for a mid-sized one and several minutes for a large
 one, and use the UI's time-limit setting (up to 15 minutes). The time limit governs the improvement
 stage; on big inputs finding the first valid timetable can itself outlast a very short limit.
-**Whole-university scale (thousands of sessions) and real-world data have not been tested.**
+### University scale
+
+Past a few hundred sessions that share rooms, teachers and joint classes, solving everything at once stops
+working (a fictional 10-department university of 1,615 sessions found nothing in 10 minutes). So above
+400 sessions the app solves **department by department**: joint classes that bring departments together
+first, then each department around what is already placed, with a small pool of rooms per department and a
+fallback to merging groups if one will not fit. It then improves one department at a time with the rest held
+still. Measured on a fictional university whose departments share a room pool, teachers and joint electives
+(`backend/benchmarks/scale.py`, 12 cores, time to a first valid timetable, one run per row; memory stayed
+under 0.6 GB throughout, against 3 GB for the all-at-once attempt at 1,615 sessions):
+
+| Departments | Weekly sessions | All at once | Department by department |
+|---|---|---|---|
+| 2 | 323 | 12-22 s | 3.5 s |
+| 5 | 806 | 346 s | 18 s |
+| 10 | 1,615 | nothing in 10 min | 70-90 s |
+| 25 | 4,036 | not tried | 178 s |
+| 60 | 9,690 | not tried | 873 s, 0.4 GB |
+
+At 323 sessions with the quality goals on and a 90 s limit, the split gave a lower penalty than solving
+everything at once (1,606 against 2,135). The split is a heuristic: it is not guaranteed to match a full solve
+that could run to completion, and the quality of very large results has only been spot-checked.
+**Only this fictional data has been used; real universities may behave differently.**
 
 ## Install the Windows app (nothing else to set up)
 

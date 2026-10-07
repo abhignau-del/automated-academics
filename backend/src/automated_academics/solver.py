@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
@@ -89,7 +90,18 @@ class _Session:
 
 
 def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
-          log_search: bool = False, min_first_solution_s: float | None = None) -> Timetable:
+          log_search: bool = False, min_first_solution_s: float | None = None,
+          only: set[str] | None = None, fixed: Sequence[Placement] = (),
+          hint: Sequence[Placement] | None = None, room_ids: set[str] | None = None) -> Timetable:
+    """Schedule the institution (or part of it).
+
+    `only` limits scheduling to those offerings; `fixed` are placements of the others that are already
+    decided, which this part must work around (teachers, classes and rooms they use are busy then).
+    `hint` is a complete earlier answer for the offerings being scheduled, used as the starting point.
+    `room_ids` limits which rooms the new sessions may use (a smaller choice solves much faster).
+    The returned timetable holds only the newly scheduled sessions, but its quality figures are
+    measured over `fixed` plus those, so they describe the whole timetable.
+    """
     cal = inst.calendar
     n_lectures, n_days = cal.lectures_per_day, cal.days
     courses = {c.code: c for c in inst.courses}
@@ -110,14 +122,21 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
     need_occupancy = bool(w.batch_gaps or w.faculty_gaps or w.peak_day_load)
     occupancy: dict[tuple[str, str, int, int], list[cp_model.IntVar]] = defaultdict(list)
 
+    free_batches: set[str] = set()
+    free_faculty: set[str] = set()
     for off in inst.offerings:
+        if only is not None and off.id not in only:
+            continue
         course = courses[off.course_code]
         strength = sum(batches[b].strength for b in off.batch_ids)
-        rooms = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength)]
+        rooms = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength)
+                 and (room_ids is None or r.id in room_ids)]
         fac = faculty[off.faculty_id]
         blocked = {(s.day, s.lecture) for s in fac.unavailable}
         avoided = {(s.day, s.lecture) for s in fac.avoid}
         attending = inst.occupied_batches(off.batch_ids)
+        free_batches |= attending
+        free_faculty.add(off.faculty_id)
 
         for i, length in enumerate(off.sessions):
             if not rooms:
@@ -175,14 +194,49 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                         for b in attending:
                             occupancy[("B", b, d, c)].append(v)
 
+    # Placements decided elsewhere occupy their teacher, classes and room as constants.
+    fixed_load: dict[tuple[str, int], int] = defaultdict(int)
+    if fixed:
+        by_id = {o.id: o for o in inst.offerings}
+        one = model.NewBoolVar("fixed_busy")
+        model.Add(one == 1)
+        for pl in fixed:
+            off = by_id[pl.offering_id]
+            at = pl.day * n_lectures + pl.start
+            who = inst.occupied_batches(off.batch_ids)
+            iv = model.NewFixedSizeIntervalVar(at, pl.length, f"fx_{pl.offering_id}_{pl.session_index}")
+            fac_intervals[off.faculty_id].append(iv)
+            for b in who:
+                batch_intervals[b].append(iv)
+            room_intervals[pl.room_id].append(iv)
+            fixed_load[(off.faculty_id, pl.day)] += pl.length
+            if need_occupancy:
+                for c in range(pl.start, pl.start + pl.length):
+                    occupancy[("F", off.faculty_id, pl.day, c)].append(one)
+                    for b in who:
+                        occupancy[("B", b, pl.day, c)].append(one)
+
     for intervals in (*fac_intervals.values(), *batch_intervals.values(), *room_intervals.values()):
         if len(intervals) > 1:
             model.AddNoOverlap(intervals)
 
-    for (fid, _d), items in fac_day_load.items():
-        cap = faculty[fid].max_lectures_per_day
+    for (fid, d), items in fac_day_load.items():
+        cap = faculty[fid].max_lectures_per_day - fixed_load.get((fid, d), 0)
+        if cap < 0:
+            raise Unsatisfiable(f"{faculty[fid].name} is already over the daily limit on day {d + 1}")
         if sum(length for length, _ in items) > cap:  # skip constraints that can never bind
             model.Add(sum(length * v for length, v in items) <= cap)
+
+    if hint:  # a complete earlier answer: stage 1 then confirms it almost instantly
+        at = {(p.offering_id, p.session_index): p for p in hint}
+        for s_ in sessions:
+            p = at.get((s_.offering_id, s_.index))
+            if p is None:
+                continue
+            for t, v in s_.starts.items():
+                model.AddHint(v, int(t == p.day * n_lectures + p.start))
+            for r, y in s_.rooms:
+                model.AddHint(y, int(r.id == p.room_id))
 
     # ---- stage 1: any valid timetable (hard rules only) ----
     # With the quality goals in the model, finding a first solution can take far longer than finding
@@ -218,6 +272,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
         return out
 
     start_from = extract(first)
+    model.ClearHints()
     for s in sessions:  # the goal variables are all determined by these, so the hint is complete
         for v in s.starts.values():
             model.AddHint(v, first.Value(v))
@@ -301,13 +356,14 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                 model.AddMaxEquality(ex, [sum(lits) - 1, 0])  # exactly max(0, sessions that day - 1)
                 terms["repeat_course_day"].append(ex)
 
-    leaves = inst.leaf_batches()
+    leaves = [b for b in inst.leaf_batches() if b in free_batches]
     if w.batch_gaps:
         for b in leaves:
             terms["batch_gaps"].extend(gap_vars("B", b))
     if w.faculty_gaps:
         for f in inst.faculty:
-            terms["faculty_gaps"].extend(gap_vars("F", f.id))
+            if f.id in free_faculty:
+                terms["faculty_gaps"].extend(gap_vars("F", f.id))
     if w.peak_day_load:
         for b in leaves:
             loads = []
@@ -327,7 +383,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
         # right even for goals weighted 0. (CP-SAT's own objective figure can differ slightly from
         # the timetable it hands back when it is stopped by the time limit, so it is not used.)
         tt = Timetable(placements=placements, status=status)
-        tt.breakdown = measure(inst, tt)
+        tt.breakdown = measure(inst, Timetable(placements=[*fixed, *placements], status=status))
         tt.penalty = score(w, tt.breakdown)
         return tt
 
@@ -344,7 +400,7 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                     solver.StatusName(status))
         return baseline
     improved = finish(extract(solver), solver.StatusName(status))
-    for goal, exprs in terms.items():  # self-check: every goal's model value equals its measurement
+    for goal, exprs in (terms.items() if only is None else ()):  # self-check: every goal's model value equals its measurement
         in_model = sum(solver.Value(e) for e in exprs)
         if in_model != improved.breakdown[goal]:
             log.warning("%s: model says %d, measurement says %d", goal, in_model, improved.breakdown[goal])
