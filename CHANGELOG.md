@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.5.0 (2026-10-07)
+
+Joint classes, university-scale solving and a shared (server) mode. Existing data, workbooks and databases keep
+working; sign-in is off unless you switch it on, and databases gain their new tables in place.
 
 - **Shared mode (first slice).** Run it as a server with `AA_AUTH=1` (or `docker compose up -d`): first-run administrator,
   sign-in with salted-scrypt passwords and HttpOnly cookie sessions, login throttling, an administrator's **People**
