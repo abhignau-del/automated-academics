@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
+import { canDelete, canEdit, canShare, roleOf } from "./access";
+import { AccountMenu, useSession } from "./auth";
 import { DataEditor } from "./DataEditor";
+import { ShareDialog } from "./ShareDialog";
 import { Grid } from "./Grid";
 import { WorkloadImport } from "./WorkloadImport";
 import { lock, pinnedKeys, unlock } from "./pins";
@@ -69,12 +72,18 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [view, setView] = useState<"timetable" | "data">("timetable");
+  const [viewChoice, setView] = useState<"timetable" | "data">("timetable");
+  const [sharing, setSharing] = useState(false);
+  const session = useSession(); // null when sign-in is off
   const [jobStale, setJobStale] = useState(false); // data was edited after the shown timetable was made
   const [dataDirty, setDataDirty] = useState(false); // unsaved edits in the Data tab
   const [dataErrors, setDataErrors] = useState(0); // problems in the saved data that block generating
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  const role = roleOf(list.find((i) => i.id === iid));
+  const editable = canEdit(role); // a viewer can look and download, nothing more
+  const view = editable ? viewChoice : "timetable";
 
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -211,7 +220,7 @@ export default function App() {
   };
   const pinned = useMemo(() => pinnedKeys(inst?.pins ?? []), [inst]);
   const onMove = (key: string, day: number, start: number) => {
-    if (!inst || pinned.has(key)) return;
+    if (!inst || !editable || pinned.has(key)) return;
     const next = moveSession(inst.calendar, placements, key, day, start);
     if (next) commit(next);
   };
@@ -280,6 +289,7 @@ export default function App() {
       <header>
         <h1>Automated Academics</h1>
         <span className="muted">Timetable generator for UG/PG programs</span>
+        <AccountMenu />
       </header>
 
       <aside>
@@ -315,6 +325,7 @@ export default function App() {
         {!list.length && <p className="muted">No institutions yet. Start a blank one and enter your data here, or upload an Excel workbook.</p>}
       </aside>
 
+      {sharing && iid && inst && <ShareDialog iid={iid} name={inst.name} onClose={() => setSharing(false)} />}
       {importing && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(false)} />}
 
       <main>
@@ -334,19 +345,21 @@ export default function App() {
               <button role="tab" aria-selected={view === "timetable"} className={view === "timetable" ? "active" : ""} onClick={() => setView("timetable")}>
                 Timetable
               </button>
-              <button role="tab" aria-selected={view === "data"} className={view === "data" ? "active" : ""} onClick={() => setView("data")}>
-                Data
-                {(dataErrors > 0 || dataDirty) && (
-                  <span className={"badge" + (dataErrors > 0 ? "" : " soft")}>{dataErrors > 0 ? dataErrors : "•"}</span>
-                )}
-              </button>
+              {editable && (
+                <button role="tab" aria-selected={view === "data"} className={view === "data" ? "active" : ""} onClick={() => setView("data")}>
+                  Data
+                  {(dataErrors > 0 || dataDirty) && (
+                    <span className={"badge" + (dataErrors > 0 ? "" : " soft")}>{dataErrors > 0 ? dataErrors : "•"}</span>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* kept mounted (just hidden) so unsaved edits survive switching tabs */}
-            <div hidden={view !== "data"}>
-              <DataEditor iid={iid} institution={inst} onSaved={reloadInstitution} onDirtyChange={setDataDirty}
+            {editable && <div hidden={view !== "data"}>
+              <DataEditor iid={iid} institution={inst} onSaved={reloadInstitution} onDirtyChange={setDataDirty} canDelete={canDelete(role)}
                 onDeleted={() => { setDataDirty(false); setView("timetable"); setIid(null); refreshList(); }} />
-            </div>
+            </div>}
           </>
         )}
 
@@ -362,6 +375,8 @@ export default function App() {
               <h2>{inst.name}</h2>
               <span className="muted">{inst.batches.length} batches · {inst.faculty.length} faculty · {inst.rooms.length} rooms · {inst.offerings.reduce((n, o) => n + o.sessions.length, 0)} sessions/week</span>
               <span className="spacer" />
+              {session && canShare(role) && <button className="btn" onClick={() => setSharing(true)}>Share…</button>}
+              {session && !editable && <span className="status">View only</span>}
               <label>Time limit
                 <select value={timeLimit} onChange={(e) => setTimeLimit(Number(e.target.value))} disabled={solving}>
                   {[10, 30, 60, 120, 300, 600, 900].map((s) => (
@@ -370,7 +385,7 @@ export default function App() {
                 </select>
               </label>
               <button className="btn primary" onClick={onSolve}
-                disabled={solving || dataErrors > 0 || inst.offerings.length === 0 || dataDirty}
+                disabled={!editable || solving || dataErrors > 0 || inst.offerings.length === 0 || dataDirty}
                 title={dataErrors > 0 ? `Fix the ${dataErrors} problem${dataErrors === 1 ? "" : "s"} in the Data tab first`
                   : inst.offerings.length === 0 ? "Add some offerings in the Data tab first"
                   : dataDirty ? "Save or discard your changes in the Data tab first" : undefined}>
@@ -396,9 +411,11 @@ export default function App() {
                   <span className={"status " + (report ? (report.ok ? "ok" : "bad") : "")}>
                     {!report ? "Checking…" : report.ok ? "No clashes" : `${report.details.length} problem${report.details.length === 1 ? "" : "s"}`}
                   </span>
-                  <button className="btn" onClick={undo} disabled={!history.length}>Undo</button>
-                  <button className="btn" onClick={() => { setPlacements(saved); setHistory([]); }} disabled={!dirty}>Revert</button>
-                  <button className="btn primary" onClick={onSave} disabled={!dirty}>{dirty ? "Save changes" : "Saved"}</button>
+                  {editable && <>
+                    <button className="btn" onClick={undo} disabled={!history.length}>Undo</button>
+                    <button className="btn" onClick={() => { setPlacements(saved); setHistory([]); }} disabled={!dirty}>Revert</button>
+                    <button className="btn primary" onClick={onSave} disabled={!dirty}>{dirty ? "Save changes" : "Saved"}</button>
+                  </>}
                   <div className="menu" ref={menuRef} onKeyDown={(e) => { if (e.key === "Escape") setMenuOpen(false); }}>
                     <button className="btn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
                       Export ▾
@@ -430,7 +447,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <p className="hint">Drag a session to a new slot. Clashes are checked as you go; sessions involved turn red.
+                {!editable ? <p className="hint">You can look at this timetable and download it. Ask an owner for edit access to change it.</p> : <p className="hint">Drag a session to a new slot. Clashes are checked as you go; sessions involved turn red.
                   Lock sessions you are happy with and they stay put when you regenerate.
                   {inst.pins.length > 0 && ` ${inst.pins.length} locked.`}
                   {items.length > 0 && (
@@ -441,11 +458,11 @@ export default function App() {
                       )}
                     </>
                   )}
-                </p>
+                </p>}
 
                 <div className="work">
                   <Grid inst={inst} items={items} kind={kind} conflictOfferings={conflictOfferings}
-                    pinned={pinned} selected={selected} onSelect={setSelected} onMove={onMove} />
+                    pinned={pinned} readOnly={!editable} selected={selected} onSelect={setSelected} onMove={onMove} />
 
                   <div className="side">
                     {sel && selOffering ? (
@@ -455,7 +472,7 @@ export default function App() {
                         <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
-                        {pinned.has(sessionKey(sel)) ? (
+                        {editable && (pinned.has(sessionKey(sel)) ? (
                           <button className="btn" onClick={() => savePins(unlock(inst.pins, new Set([sessionKey(sel)])))} disabled={dataDirty}>
                             🔓 Unlock this session
                           </button>
@@ -464,9 +481,9 @@ export default function App() {
                             title="Keep it exactly here, in this room, when you regenerate">
                             🔒 Lock in place
                           </button>
-                        )}
+                        ))}
                         <label>Room
-                          <select disabled={pinned.has(sessionKey(sel))} value={sel.room_id} onChange={(e) => commit(changeRoom(placements, sessionKey(sel), e.target.value))}>
+                          <select disabled={!editable || pinned.has(sessionKey(sel))} value={sel.room_id} onChange={(e) => commit(changeRoom(placements, sessionKey(sel), e.target.value))}>
                             {inst.rooms.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.kind}, {r.capacity})</option>)}
                           </select>
                         </label>

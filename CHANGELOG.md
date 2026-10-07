@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Shared mode (first slice).** Run it as a server with `AA_AUTH=1` (or `docker compose up -d`): first-run administrator,
+  sign-in with salted-scrypt passwords and HttpOnly cookie sessions, login throttling, an administrator's **People**
+  list, and per-institution access as owner / editor / viewer with a **Share** dialog. Viewers get a view-only screen.
+  Saves carry the version that was read (`ETag` / `If-Match`) and a stale save is refused with 409 and an offer to
+  load the other person's version. Databases gain `users`, `sessions`, `members` and a `version` column in place, and
+  switch to WAL mode. With sign-in off, nothing changes. Adds a `Dockerfile`, `docker-compose.yml` and a CI job that
+  builds and smoke-tests the image (not run locally: Docker was unavailable).
 - **University scale: department-by-department solving.** Institutions above 400 sessions are now solved one
   department at a time (joint classes first), each around what is already placed, with a small pool of rooms
   per department, then improved one department at a time. A fictional 10-department university (1,615

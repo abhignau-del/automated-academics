@@ -206,3 +206,10 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .jointpanel summary { cursor: pointer; }
 .pinlist small.error { color: var(--bad); }
 .pinlist small.warning { color: #8a6100; }
+.authwall { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--bg, #f4f5f7); padding: 16px; }
+.authcard { width: min(420px, 100%); background: var(--panel, #fff); border: 1px solid var(--line, #ccc); border-radius: 10px; padding: 24px; display: grid; gap: 10px; }
+.authcard h1 { font-size: 18px; } .authcard h2 { font-size: 16px; margin: 0 0 4px; }
+.authcard form, .stackform { display: grid; gap: 10px; } .authcard label, .stackform label { display: grid; gap: 4px; font-size: 13px; } .authcard input, .stackform input { padding: 8px; }
+.userstable { width: 100%; } .userstable tr.off td { opacity: .55; } .rowactions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.addform { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; } .addform input, .addform select { padding: 6px 8px; flex: 1 1 140px; }
+.modal-card h4 { margin: 14px 0 4px; }

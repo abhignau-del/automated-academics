@@ -41,7 +41,10 @@ export interface Timetable {
   breakdown: Partial<Quality>; // soft-goal measures, filled in by the solver
 }
 
-export interface InstitutionSummary { id: string; name: string; created_at: string; updated_at: string }
+export interface InstitutionSummary {
+  id: string; name: string; created_at: string; updated_at: string;
+  role?: "owner" | "editor" | "viewer"; // absent when sign-in is off or you are an administrator
+}
 export interface Job {
   id: string; institution_id: string; status: "queued" | "running" | "done" | "failed";
   error: string | null;
@@ -77,3 +80,10 @@ export interface DataIssue {
 }
 /** `valid` means the data can be saved; impossible-to-schedule data is an error issue but still valid. */
 export interface CheckResult { valid: boolean; issues: DataIssue[] }
+
+// ---- accounts (shared mode) ----
+
+export interface AuthUser { id: string; username: string; display_name: string; role: "admin" | "member" }
+export interface AuthStatus { auth: boolean; setup_needed: boolean; user: AuthUser | null }
+export interface UserRow extends AuthUser { disabled: boolean }
+export interface Member { id: string; username: string; display_name: string; role: "owner" | "editor" | "viewer" }

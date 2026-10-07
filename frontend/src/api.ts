@@ -1,6 +1,6 @@
 import type {
-  CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Timetable, UploadIssue,
-  ViewKind,
+  AuthStatus, AuthUser, CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Timetable, UploadIssue,
+  Member, UserRow, ViewKind,
 } from "./types";
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
@@ -11,14 +11,22 @@ export class ApiError extends Error {
   }
 }
 
+/** Called when the server says the sign-in is missing or has expired (shared mode). */
+let onUnauthorized: (() => void) | null = null;
+export const setUnauthorizedHandler = (fn: (() => void) | null) => { onUnauthorized = fn; };
+
+/** The version of each institution as last read (its ETag), sent back on save so a stale save is refused. */
+const versions = new Map<string, string>();
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(API_BASE + path, init);
+    res = await fetch(API_BASE + path, { credentials: "include", ...init });
   } catch {
     throw new ApiError(0, `Cannot reach the server at ${API_BASE}. Is the backend running?`);
   }
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith("/auth/")) onUnauthorized?.();
     let message = res.statusText;
     let issues: UploadIssue[] = [];
     try {
@@ -43,7 +51,18 @@ const json = (method: string, body: unknown): RequestInit => ({
 export const templateUrl = `${API_BASE}/institutions/template`;
 
 export const listInstitutions = () => request<InstitutionSummary[]>("/institutions");
-export const getInstitution = (id: string) => request<Institution>(`/institutions/${id}`);
+export async function getInstitution(id: string): Promise<Institution> {
+  const res = await fetch(`${API_BASE}/institutions/${id}`, { credentials: "include" }).catch(() => {
+    throw new ApiError(0, `Cannot reach the server at ${API_BASE}. Is the backend running?`);
+  });
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
+    throw new ApiError(res.status, (await res.json().catch(() => ({}))).detail ?? res.statusText);
+  }
+  const tag = res.headers.get("ETag");
+  if (tag) versions.set(id, tag);
+  return res.json();
+}
 
 export function uploadInstitution(file: File) {
   const form = new FormData();
@@ -63,8 +82,14 @@ export const checkInstitution = (inst: Institution) =>
 
 export const createInstitution = (inst: Institution) =>
   request<{ id: string; name: string; issues: DataIssue[] }>("/institutions", json("POST", inst));
-export const updateInstitution = (id: string, inst: Institution) =>
-  request<{ id: string; name: string; issues: DataIssue[] }>(`/institutions/${id}`, json("PUT", inst));
+export async function updateInstitution(id: string, inst: Institution) {
+  const init = json("PUT", inst);
+  const version = versions.get(id);
+  if (version) init.headers = { ...init.headers, "If-Match": version };
+  const r = await request<{ id: string; name: string; issues: DataIssue[]; version: number }>(`/institutions/${id}`, init);
+  versions.set(id, `"${r.version}"`);
+  return r;
+}
 export interface WorkloadOptions {
   days: string[]; lectures_per_day: number; break_after: number[];
   classrooms: number | null; seats: number | null; labs: number; lab_seats: number | null;
@@ -116,3 +141,26 @@ export const validate = (iid: string, tt: Timetable) =>
   request<ConflictReport>(`/institutions/${iid}/validate`, json("POST", tt));
 export const saveTimetable = (jid: string, tt: Timetable) =>
   request<ConflictReport>(`/jobs/${jid}/timetable`, json("PUT", tt));
+
+// ---- accounts ----
+
+export const authStatus = () => request<AuthStatus>("/auth/status");
+export const login = (username: string, password: string) => request<AuthUser>("/auth/login", json("POST", { username, password }));
+export const setupAdmin = (username: string, password: string, display_name: string) =>
+  request<AuthUser>("/auth/setup", json("POST", { username, password, display_name }));
+export const logout = () => request<void>("/auth/logout", { method: "POST" });
+export const changePassword = (current: string, next: string) =>
+  request<void>("/auth/password", json("POST", { current, new: next }));
+
+export const listUsers = () => request<UserRow[]>("/users");
+export const addUser = (username: string, password: string, display_name: string, role: "admin" | "member") =>
+  request<AuthUser>("/users", json("POST", { username, password, display_name, role }));
+export const patchUser = (id: string, changes: { display_name?: string; password?: string; role?: "admin" | "member"; disabled?: boolean }) =>
+  request<AuthUser>(`/users/${id}`, json("PATCH", changes));
+export const deleteUser = (id: string) => request<void>(`/users/${id}`, { method: "DELETE" });
+
+export const listMembers = (iid: string) => request<Member[]>(`/institutions/${iid}/members`);
+export const setMember = (iid: string, username: string, role: Member["role"]) =>
+  request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, json("PUT", { role }));
+export const removeMember = (iid: string, username: string) =>
+  request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, { method: "DELETE" });

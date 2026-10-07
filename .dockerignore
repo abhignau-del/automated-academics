@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+dist-app
+private-data
+logs
+*.db
+*.db-*
+**/__pycache__
+backend/.venv
+.github

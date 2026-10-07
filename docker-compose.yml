@@ -1,0 +1,15 @@
+services:
+  academics:
+    build: .
+    image: automated-academics
+    ports:
+      - "8000:8000"
+    volumes:
+      - aa-data:/data
+    environment:
+      # Set to "1" once it is served over HTTPS (behind a reverse proxy), so the sign-in cookie is only sent securely.
+      AA_COOKIE_SECURE: "0"
+    restart: unless-stopped
+
+volumes:
+  aa-data:

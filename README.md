@@ -110,6 +110,35 @@ everything at once (1,606 against 2,135). The split is a heuristic: it is not gu
 that could run to completion, and the quality of very large results has only been spot-checked.
 **Only this fictional data has been used; real universities may behave differently.**
 
+## Sharing with a team (server mode)
+
+For several people to use one copy, run it as a server with sign-in switched on. The single-user app described
+elsewhere is unchanged: with sign-in off (the default) nobody is asked for a password.
+
+```bash
+docker compose up -d        # then open http://localhost:8000
+```
+
+1. The first visit asks you to **create the administrator** (a username and a password of at least 8 characters).
+2. The administrator adds people under their name at the top right, then **People…**.
+3. Whoever creates an institution owns it. An owner chooses **Share…** and gives others access as a
+   **viewer** (look and download), an **editor** (change data, generate and edit timetables) or another **owner**
+   (also share and delete). Administrators see every institution. People see only what is shared with them.
+4. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
+   an offer to load the other version.
+
+Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
+automated_academics.api:create_app --factory --port 8000` (build the screen first with `npm run build:app` in
+`frontend/`). Put it behind HTTPS (a reverse proxy such as Caddy or nginx) and set `AA_COOKIE_SECURE=1` so the
+sign-in cookie is sent only securely. Back up the one data file (`/data/automated_academics.db` in the container).
+
+What this does and does not do: passwords are stored as salted hashes and a sign-in is a random token kept in an
+HttpOnly cookie; guessing passwords is slowed down; every request is checked on the server. There is **no password
+reset by email** (an administrator sets a new one), no single sign-on (SAML/OIDC), no audit log, and no per-department
+permissions yet (access is per institution). Run **one** server process: jobs and throttling live in that process
+and the data is a single SQLite file, which suits tens of people rather than thousands. The Docker image is built
+and smoke-tested by CI; the sign-in, sharing and conflict behaviour is covered by automated API tests and a browser test.
+
 ## Install the Windows app (nothing else to set up)
 
 Each release can include **`Automated-Academics-<version>-windows.zip`**, a ready-to-run copy that needs no
@@ -330,7 +359,8 @@ font such as Noto Sans.
   availability is edited on its grid (it can be pasted only by heading, as `Mon:1, Tue:3`), undo history is
   lost when you save or reload, and it hasn't been tried beyond about 1,000 offerings. Saving replaces the whole
   institution, so two people editing at once would overwrite each other (last save wins).
-- **No authentication.** Run it on localhost or behind your own access control.
+- **Sign-in is optional and basic.** Off by default (single user). In server mode see *Sharing with a team* for what
+  it covers; it has no per-department permissions, single sign-on, e-mail reset or audit log yet.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
 - **The Windows app is unsigned and has only been tried on Windows 11.** The release workflow that builds it has
   not run on GitHub yet; the local build and a start-to-export smoke test (`scripts/smoke_app.py`) have.
@@ -357,6 +387,8 @@ font such as Noto Sans.
 - [x] Spreadsheet-style editing: paste from Excel, bulk edit, undo / redo, filter, keyboard movement
 - [x] Windows app: extract and double-click, no Python or Node needed
 - [x] Import a workload list; lock sessions in place; plain-language reasons when no timetable exists
+- [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
+- [ ] Per-department permissions, read-only publishing links, single sign-on, audit log
 - [ ] Browser tests in CI (today the end-to-end journeys are run by hand)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights

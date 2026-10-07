@@ -393,11 +393,12 @@ interface Props {
   onSaved: () => Promise<void>;
   onDeleted: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  canDelete?: boolean; // only an owner may delete (default true: sign-in off)
 }
 
 type SetDraft = (next: Institution | ((d: Institution) => Institution), key?: string) => void;
 
-export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange }: Props) {
+export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange, canDelete = true }: Props) {
   const [hist, setHist] = useState<History<Institution>>(() => initHistory(institution));
   const draft = hist.present;
   const draftRef = useRef(draft);
@@ -411,6 +412,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
   const [check, setCheck] = useState<CheckResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false); // someone else saved first
   const [notice, setNotice] = useState<string | null>(null);
   const [openFaculty, setOpenFaculty] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
@@ -621,8 +623,8 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
 
   async function save() {
     setSaving(true); setError(null);
-    try { await api.updateInstitution(iid, draft); await onSaved(); }
-    catch (e) { setError(message(e)); }
+    try { await api.updateInstitution(iid, draft); setConflict(false); await onSaved(); }
+    catch (e) { setError(message(e)); setConflict(e instanceof api.ApiError && e.status === 409); }
     finally { setSaving(false); }
   }
 
@@ -714,10 +716,23 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
         <a className="btn" href={api.workbookUrl(iid)} title="Download the saved data as an Excel workbook (a backup you can upload again)">
           Download Excel
         </a>
-        <button className="btn danger" onClick={del}>Delete institution</button>
+        {canDelete && <button className="btn danger" onClick={del}>Delete institution</button>}
       </div>
 
-      {error && <div className="alert" role="alert">{error}<button onClick={() => setError(null)}>×</button></div>}
+      {error && (
+        <div className="alert" role="alert">
+          <span>{error}
+            {conflict && (
+              <> <button className="linkish" onClick={async () => {
+                if (!confirm("Throw away your unsaved changes and load the other person's version?")) return;
+                setError(null); setConflict(false);
+                await onSaved(); // reloading replaces the draft with the saved data
+              }}>Load their version (discards my changes)</button></>
+            )}
+          </span>
+          <button onClick={() => { setError(null); setConflict(false); }}>×</button>
+        </div>
+      )}
       {notice && <div className="alert note" role="status">{notice}<button onClick={() => setNotice(null)}>×</button></div>}
 
       <div className="summary">

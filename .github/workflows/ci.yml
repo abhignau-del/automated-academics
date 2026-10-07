@@ -34,3 +34,16 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t automated-academics .
+      - name: Start it and check it answers, with sign-in on and nobody set up yet
+        run: |
+          docker run -d --name aa -p 8000:8000 automated-academics
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/health && break; sleep 2; done
+          curl -fs http://127.0.0.1:8000/auth/status | tee /dev/stderr | grep -q '"setup_needed":true'
+          curl -fs http://127.0.0.1:8000/ | grep -q 'id="root"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/institutions)" = 401

@@ -10,6 +10,7 @@ interface Props {
   kind: ViewKind;
   conflictOfferings: Set<string>;
   pinned: Set<string>; // sessions fixed in place; they can't be dragged
+  readOnly?: boolean; // a viewer: nothing can be dragged
   selected: string | null;
   onSelect: (key: string | null) => void;
   onMove: (key: string, day: number, start: number) => void;
@@ -17,7 +18,7 @@ interface Props {
 
 interface Hover { day: number; start: number; length: number; ok: boolean }
 
-export function Grid({ inst, items, kind, conflictOfferings, pinned, selected, onSelect, onMove }: Props) {
+export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = false, selected, onSelect, onMove }: Props) {
   const cal = inst.calendar;
   const drag = useRef<{ key: string; grab: number; length: number } | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -115,7 +116,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, selected, o
                 className={cls.join(" ")}
                 role="button"
                 tabIndex={0}
-                draggable={!locked}
+                draggable={!locked && !readOnly}
                 title={`${info.name}\n${info.lines.join(" · ")}`}
                 style={{
                   top: p.start * ROW_H, height: p.length * ROW_H - 2,
