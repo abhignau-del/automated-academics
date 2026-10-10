@@ -1,5 +1,5 @@
 import type {
-  AuthStatus, AuthUser, CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Timetable, UploadIssue,
+  AuthStatus, AuthUser, CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Placement, Quality, Timetable, UploadIssue,
   Member, UserRow, ViewKind,
 } from "./types";
 
@@ -164,3 +164,28 @@ export const setMember = (iid: string, username: string, role: Member["role"]) =
   request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, json("PUT", { role }));
 export const removeMember = (iid: string, username: string) =>
   request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, { method: "DELETE" });
+
+// ---- importing an existing grid timetable ----
+
+export interface GridOptions {
+  sheets: string[] | null; default_students: number; seats: number; spare_rooms: number | null; merge_consecutive: boolean;
+}
+export interface GridReport {
+  sheets: { name: string; blocks: number; used: number; note: string }[];
+  classes: { id: string; name: string; room: string | null; sessions: number; slots: number }[];
+  assumptions: string[]; merged: string[]; parallel: string[]; problems: string[];
+  existing: { sessions: number; clashes: number; clash_examples: string[]; quality: Quality };
+}
+export interface GridDraft { institution: Institution; report: GridReport; issues: DataIssue[]; placements: Placement[] }
+
+/** Read an existing grid timetable into a draft institution. Nothing is saved until the draft is created. */
+export function importGrid(file: File, options: GridOptions) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("options", JSON.stringify(options));
+  return request<GridDraft>("/institutions/import-grid", { method: "POST", body: form });
+}
+
+/** Keep an existing timetable (from `importGrid`) as the institution's first finished timetable. */
+export const keepImportedTimetable = (iid: string, placements: Placement[]) =>
+  request<{ job_id: string; report: ConflictReport }>(`/institutions/${iid}/timetable/imported`, json("POST", { placements }));

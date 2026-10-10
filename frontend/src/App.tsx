@@ -5,6 +5,7 @@ import { AccountMenu, useSession } from "./auth";
 import { DataEditor } from "./DataEditor";
 import { ShareDialog } from "./ShareDialog";
 import { Grid } from "./Grid";
+import { GridImport } from "./GridImport";
 import { WorkloadImport } from "./WorkloadImport";
 import { lock, pinnedKeys, unlock } from "./pins";
 import { timeLabel } from "./times";
@@ -80,7 +81,7 @@ export default function App() {
   const [dataDirty, setDataDirty] = useState(false); // unsaved edits in the Data tab
   const [dataErrors, setDataErrors] = useState(0); // problems in the saved data that block generating
   const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState<"workload" | "grid" | null>(null);
 
   const role = roleOf(list.find((i) => i.id === iid));
   const editable = canEdit(role); // a viewer can look and download, nothing more
@@ -133,13 +134,13 @@ export default function App() {
   }
 
   /** A workload list was imported and created: show it, in the Data tab so it can be reviewed and completed. */
-  async function afterImport(id: string) {
-    setImporting(false);
+  async function afterImport(id: string, show: "data" | "timetable" = "data") {
+    setImporting(null);
     if (dataDirty && !confirm("You have unsaved changes to this institution's data. Discard them?")) return;
     await refreshList();
     setDataDirty(false);
     setIid(id);
-    setView("data");
+    setView(show);
   }
 
   async function createNew(kind: "blank" | "sample") {
@@ -302,7 +303,8 @@ export default function App() {
             </button>
             {newMenuOpen && (
               <div className="menu-list left" role="menu">
-                <button role="menuitem" onClick={() => { setNewMenuOpen(false); setImporting(true); }}>Import a workload list…</button>
+                <button role="menuitem" onClick={() => { setNewMenuOpen(false); setImporting("grid"); }}>Import an existing timetable…</button>
+                <button role="menuitem" onClick={() => { setNewMenuOpen(false); setImporting("workload"); }}>Import a workload list…</button>
                 <button role="menuitem" onClick={() => createNew("blank")}>Blank institution</button>
                 <button role="menuitem" onClick={() => createNew("sample")}>Copy of the sample</button>
               </div>
@@ -327,7 +329,8 @@ export default function App() {
       </aside>
 
       {sharing && iid && inst && <ShareDialog iid={iid} name={inst.name} onClose={() => setSharing(false)} />}
-      {importing && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(false)} />}
+      {importing === "workload" && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(null)} />}
+      {importing === "grid" && <GridImport onCreated={(id) => afterImport(id, "timetable")} onClose={() => setImporting(null)} />}
 
       <main>
         {error && <div className="alert" role="alert">{error}<button onClick={() => { setError(null); setIssues([]); }}>×</button></div>}

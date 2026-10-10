@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Import an existing timetable.** + New → *Import an existing timetable…* reads timetable grids (a block per class, days
+  across, lectures down, "Subject (Teacher)" in the cells) into a new institution: classes and their rooms from the headings,
+  lecture times and breaks from the side column, subjects and teachers from the cells (several layouts, plus a faculty table
+  beside the grid), parallel electives as class groups, double lectures kept, spellings of one teacher merged (and listed),
+  repeated weeks and per-teacher views skipped. It scores the current timetable and keeps it as the first timetable.
+  Preview first, with every assumption listed; the sheets to read can be unticked.
 ## v0.6.0 (2026-10-10)
 
 Lecture times. Existing data, workbooks and databases keep working: data without times looks exactly as before.

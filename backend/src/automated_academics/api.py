@@ -29,7 +29,7 @@ from . import __version__
 from .checks import check_institution, diagnose
 from .excel_io import ImportErrors, export_workbook, import_workbook
 from .export import build_pdf, build_xlsx
-from .models import Institution, Timetable
+from .models import Institution, Placement, Timetable
 from .explain import explain_message
 from . import auth as authlib
 from .auth import LOCAL_USER, User
@@ -40,6 +40,7 @@ from .synthetic import sample_institution
 from .quality import measure, score
 from .validate import find_conflict_details
 from .views import session_views
+from .grid_io import GridError, GridOptions, import_grid
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
 
 log = logging.getLogger("automated_academics")
@@ -63,6 +64,23 @@ class WorkloadOptionsIn(BaseModel):
 
     def to_options(self) -> WorkloadOptions:
         return WorkloadOptions(**self.model_dump())
+
+
+class GridOptionsIn(BaseModel):
+    """What the "import an existing timetable" dialog sends."""
+
+    sheets: list[str] | None = Field(default=None, max_length=100)
+    default_students: int = Field(default=60, ge=1, le=2000)
+    seats: int = Field(default=70, ge=1, le=2000)
+    spare_rooms: int | None = Field(default=None, ge=0, le=50)
+    merge_consecutive: bool = True
+
+    def to_options(self) -> GridOptions:
+        return GridOptions(**self.model_dump())
+
+
+class ImportedTimetable(BaseModel):
+    placements: list[Placement] = Field(max_length=20000)
 
 
 class SolveRequest(BaseModel):
@@ -297,6 +315,32 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         return {"institution": inst.model_dump(mode="json"), "report": report.as_dict(),
                 "issues": [i.as_dict() for i in (issues or diagnose(inst))]}
 
+    @app.post("/institutions/import-grid")
+    def import_grid_timetable(file: UploadFile = File(...), options: str = Form("{}")):
+        """Read an existing grid timetable (one block per class, days across, lectures down) into a draft.
+
+        Nothing is saved: the draft, a report of everything assumed or merged, the existing timetable's quality
+        and its placements come back for review. Create it with POST /institutions, then keep the existing
+        timetable with POST /institutions/{id}/timetable/imported.
+        """
+        try:
+            opt = GridOptionsIn.model_validate(json.loads(options or "{}"))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(422, f"bad options: {e}") from None
+        data = file.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"file larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+        try:
+            inst, report, placements = import_grid(io.BytesIO(data), opt.to_options())
+        except GridError as e:
+            raise HTTPException(422, str(e)) from None
+        except (zipfile.BadZipFile, KeyError, OSError):
+            raise HTTPException(400, "not a valid .xlsx workbook") from None
+        _, issues = check_institution(inst.model_dump(mode="json"))
+        return {"institution": inst.model_dump(mode="json"), "report": report.as_dict(),
+                "issues": [i.as_dict() for i in (issues or diagnose(inst))],
+                "placements": [pl.model_dump(mode="json") for pl in placements]}
+
     @app.post("/institutions/check")
     def check_draft(data: dict[str, Any] = Body(...)):
         """Check institution data without saving it, for live feedback while it is being edited.
@@ -392,6 +436,22 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         jid = store.create_job(iid, limit)
         pool.submit(run_job, jid, inst, limit)
         return {"job_id": jid, "status": "queued"}
+
+    @app.post("/institutions/{iid}/timetable/imported", status_code=201)
+    def keep_imported_timetable(iid: str, body: ImportedTimetable, request: Request):
+        """Store an existing timetable (as read by import-grid) as this institution's first finished timetable,
+        so it can be looked at, compared with and replaced by a generated one. Clashes are reported, not refused."""
+        inst = institution_or_404(iid, request, "editor")
+        offerings = {o.id: o for o in inst.offerings}
+        rooms = {r.id for r in inst.rooms}
+        for pl in body.placements:
+            o = offerings.get(pl.offering_id)
+            if o is None or pl.session_index >= len(o.sessions) or pl.room_id not in rooms or pl.day >= inst.calendar.days:
+                raise HTTPException(422, f"placement of {pl.offering_id} does not belong to this institution")
+        tt = Timetable(placements=body.placements, status="IMPORTED")
+        jid = store.create_job(iid, 0)
+        store.finish_job(jid, tt)
+        return {"job_id": jid, "report": _report(inst, tt)}
 
     @app.post("/institutions/{iid}/validate", response_model=ConflictReport)
     def validate_timetable(iid: str, tt: Timetable, request: Request):

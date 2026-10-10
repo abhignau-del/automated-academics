@@ -219,3 +219,7 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .timesfield .timesfill label { display: grid; gap: 2px; font-size: 12px; } .timesfield .timesfill input { width: 110px; padding: 4px 6px; }
 .timestable { border-collapse: collapse; margin: 6px 0; } .timestable th, .timestable td { padding: 3px 8px; text-align: left; } .timestable input { padding: 3px 6px; }
 .daytimes { margin-top: 10px; } .daytime { margin: 4px 0; }
+.existing { padding: 8px 12px; border-radius: 6px; margin: 8px 0; border: 1px solid var(--line); } .existing.bad { border-color: var(--bad); background: var(--warn-bg); } .existing.ok { border-color: #2e7d32; }
+.sheetlist { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; }
+
+.importform label.check { display: flex; align-items: center; gap: 6px; align-self: end; }
