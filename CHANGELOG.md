@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 (2026-10-10)
+
+Lecture times. Existing data, workbooks and databases keep working: data without times looks exactly as before.
 
 - **Lecture times.** Optional clock times for the lectures, set in Settings by whoever runs the timetable: fill them in from
   a start time, a length, the gaps and a longer break, then adjust any single one; a day can run to its own clock (a shorter
