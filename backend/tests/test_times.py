@@ -188,13 +188,20 @@ def test_a_block_that_runs_off_the_day_has_no_label():
 
 
 def test_a_day_with_its_own_clock_shows_it_in_the_excel_cell(timed):
-    inst, tt = timed
+    from automated_academics.models import Placement, Timetable
+
+    inst, _ = timed
+    # placed by hand (not solved) so there is certainly a session on Saturday, the day with its own clock, and one on Monday
+    off = next(o for o in inst.offerings if o.batch_ids == ["CS-UG1"])
+    tt = Timetable(status="MANUAL", placements=[
+        Placement(offering_id=off.id, session_index=0, day=5, start=1, length=1, room_id="C1"),
+        Placement(offering_id=off.id, session_index=1, day=0, start=1, length=1, room_id="C1"),
+    ])
     buf = io.BytesIO()
     build_xlsx(inst, tt, buf)
     wb = load_workbook(io.BytesIO(buf.getvalue()))
-    grid = next(ws for ws in wb.worksheets if ws.title != wb.worksheets[0].title)
-    sat = [grid.cell(row=r, column=7).value for r in range(3, 10)]  # Saturday is the sixth day, column G
-    mon = [grid.cell(row=r, column=2).value for r in range(3, 10)]
-    own_clock = [v for v in sat if v and "\n" in v and "\u2013" in v.split("\n")[0]]
-    assert own_clock, sat
-    assert all("\u2013" not in (v.split("\n")[0]) for v in mon if v)  # Monday keeps the left-hand labels only
+    grid = next(ws for ws in wb.worksheets if "CS-UG1" in ws.title and "UG1-" not in ws.title)
+    sat = grid.cell(row=4, column=7).value  # Saturday is the sixth day (column G); lecture 2 is row 4
+    mon = grid.cell(row=4, column=2).value
+    assert sat and sat.split("\n")[0] == "9:00\u20139:40"  # Saturday's own clock, from day_times
+    assert mon and "\u2013" not in mon.split("\n")[0]  # Monday keeps the left-hand labels only
