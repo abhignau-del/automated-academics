@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Lecture times.** Optional clock times for the lectures, set in Settings by whoever runs the timetable: fill them in from
+  a start time, a length, the gaps and a longer break, then adjust any single one; a day can run to its own clock (a shorter
+  Saturday). They appear on the timetable grid, in a session's details, on teachers' availability grids, in PDFs and in
+  Excel, which also reads and writes them (`lecture_times`, `lecture_times_<Day>`; "8 to 8.50", "9:30 am" and "8.55" all
+  work). Changing the number of lectures keeps the times in step. Nothing changes for data without times.
 ## v0.5.0 (2026-10-07)
 
 Joint classes, university-scale solving and a shared (server) mode. Existing data, workbooks and databases keep

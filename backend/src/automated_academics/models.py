@@ -9,9 +9,10 @@ of 2-3 consecutive lectures.
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class RoomKind(str, Enum):
@@ -30,6 +31,40 @@ class Slot(BaseModel):
     lecture: int = Field(ge=0)
 
 
+_CLOCK = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def _minutes(clock: str) -> int:
+    h, m = clock.split(":")
+    return int(h) * 60 + int(m)
+
+
+class LectureTime(BaseModel):
+    """When one lecture of the day runs, as 24-hour "HH:MM" clock times (shown as e.g. 9:30-10:30)."""
+
+    start: str
+    end: str
+
+    @field_validator("start", "end")
+    @classmethod
+    def _clock(cls, v: str) -> str:
+        m = _CLOCK.match(v.strip())
+        if not m:
+            raise ValueError(f"{v!r} is not a time like 9:30 or 14:05")
+        return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+    @model_validator(mode="after")
+    def _ordered(self) -> "LectureTime":
+        if _minutes(self.end) <= _minutes(self.start):
+            raise ValueError(f"a lecture must end after it starts ({self.start} to {self.end})")
+        return self
+
+    @staticmethod
+    def pretty(clock: str) -> str:
+        h, m = clock.split(":")
+        return f"{int(h)}:{m}"
+
+
 class Calendar(BaseModel):
     """Weekly grid. Days and lectures are zero-based indices."""
 
@@ -38,6 +73,38 @@ class Calendar(BaseModel):
     # A block may not span the boundary after any lecture listed here
     # (e.g. [3] = lunch between the 4th and 5th lecture).
     break_after: list[int] = [3]
+    # Optional clock times of the lectures, one per lecture (empty = just "L1", "L2", ...), plus
+    # per-day replacements for days that run to a different clock (e.g. a short Saturday).
+    times: list[LectureTime] = []
+    day_times: dict[int, list[LectureTime]] = {}
+
+    @model_validator(mode="after")
+    def _times_make_sense(self) -> "Calendar":
+        def check(rows: list[LectureTime], what: str) -> None:
+            if len(rows) != self.lectures_per_day:
+                raise ValueError(f"{what} needs a time for each of the {self.lectures_per_day} lectures, "
+                                 f"but has {len(rows)}")
+            for i in range(1, len(rows)):
+                if _minutes(rows[i].start) < _minutes(rows[i - 1].end):
+                    raise ValueError(f"{what}: lecture {i + 1} starts before lecture {i} ends")
+
+        if self.times:
+            check(self.times, "the lecture times")
+        for d, rows in self.day_times.items():
+            if not 0 <= d < len(self.day_names):
+                raise ValueError(f"lecture times given for day {d + 1}, which is not one of the {len(self.day_names)} days")
+            check(rows, f"the lecture times for {self.day_names[d]}")
+        return self
+
+    def times_on(self, day: int) -> list[LectureTime]:
+        return self.day_times.get(day) or self.times
+
+    def time_label(self, day: int, start: int, length: int = 1) -> str | None:
+        """"9:30-10:30" for the block starting at lecture `start` on `day`, or None if no times are set."""
+        rows = self.times_on(day)
+        if not rows or start < 0 or start + length > len(rows):
+            return None
+        return f"{LectureTime.pretty(rows[start].start)}\u2013{LectureTime.pretty(rows[start + length - 1].end)}"
 
     @property
     def days(self) -> int:

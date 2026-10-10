@@ -1,4 +1,5 @@
 import { cycleSlot, setSlots, slotState, type SlotState } from "./dataops";
+import { range } from "./times";
 import type { Calendar, Faculty } from "./types";
 
 const LABEL: Record<SlotState, string> = { free: "", avoid: "avoid", unavailable: "✕" };
@@ -43,6 +44,7 @@ export function SlotGrid({ cal, faculty, onChange }: Props) {
                   onClick={() => toggleLine(Array.from({ length: days }, (_, day) => ({ day, lecture })))}>
                   L{lecture + 1}
                 </button>
+                {(cal.times ?? []).length > 0 && <small className="muted"><br />{range(cal.times![lecture])}</small>}
               </th>
               {cal.day_names.map((d, day) => {
                 const state = slotState(faculty, day, lecture);

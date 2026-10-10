@@ -9,6 +9,8 @@ import {
   type Col, type Opt, type PasteResult,
 } from "./sheet";
 import { SlotGrid } from "./SlotGrid";
+import { TimesEditor } from "./TimesEditor";
+import { withLectureCount } from "./times";
 import type { Calendar, CheckResult, DataIssue, Faculty, Institution, Section, Weights } from "./types";
 
 const TABS: { key: Section; label: string }[] = [
@@ -788,7 +790,11 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
           <label>Lectures per day
             <Num label="lectures per day" min={1} value={draft.calendar.lectures_per_day}
               issue={inSection("settings").find((i) => i.field === "lectures_per_day")}
-              onChange={(v) => setDraft({ ...draft, calendar: { ...draft.calendar, lectures_per_day: v } }, "settings.lectures")} />
+              onChange={(v) => setDraft({
+                ...draft,
+                // changing the count keeps any lecture times in step with it (while typing, v may not be a number yet)
+                calendar: Number.isFinite(v) && v >= 1 ? withLectureCount(draft.calendar, v) : { ...draft.calendar, lectures_per_day: v },
+              }, "settings.lectures")} />
           </label>
           <fieldset>
             <legend>Breaks <small className="muted">a lecture block never runs across a break</small></legend>
@@ -810,6 +816,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
               ))}
             </div>
           </fieldset>
+          <TimesEditor calendar={draft.calendar} onChange={(calendar) => setDraft({ ...draft, calendar }, "settings.times")} />
           <fieldset>
             <legend>What makes a good timetable <small className="muted">higher means the solver works harder at it; 0 switches it off</small></legend>
             <div className="weights">

@@ -27,7 +27,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .models import Calendar, Institution, Timetable
+from .models import Calendar, Institution, LectureTime, Timetable
 from .views import KINDS, Kind, entities, session_views
 
 log = logging.getLogger("automated_academics")
@@ -150,7 +150,10 @@ def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Sessio
 
     for p in range(cal.lectures_per_day):
         row = p + 3
-        label = ws.cell(row=row, column=1, value=f"L{p + 1}")
+        shown = cal.times[p] if cal.times else None
+        label = ws.cell(row=row, column=1, value=f"L{p + 1}" + (
+            f"\n{LectureTime.pretty(shown.start)}\u2013{LectureTime.pretty(shown.end)}" if shown else ""))
+        label.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
         label.font, label.border = Font(bold=True), _BOX
         label.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[row].height = 62
@@ -165,7 +168,10 @@ def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Sessio
             first = owner is not None and starts.get((d, p)) == owner
             if owner in merged and not first:
                 continue  # covered by a merged range
-            cell.value = "\n".join(_cell_text(kind, sessions, idxs, first))
+            lines = _cell_text(kind, sessions, idxs, first)
+            if first and d in cal.day_times:  # this day runs to its own clock: say so on the session
+                lines = [cal.time_label(d, p, sessions[owner]["length"]) or "", *lines]
+            cell.value = "\n".join(x for x in lines if x)
             if owner is not None:
                 cell.fill = PatternFill("solid", fgColor=course_hex(sessions[owner]["course_code"]))
         if p in cal.break_after:
@@ -287,7 +293,9 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
         ]
         for p in range(cal.lectures_per_day):
             r = p + 1
-            row: list = [Paragraph(f"<b>L{p + 1}</b>", ParagraphStyle("p", parent=cell, alignment=1))]
+            shown = cal.times[p] if cal.times else None
+            when = (f"<br/>{LectureTime.pretty(shown.start)}\u2013{LectureTime.pretty(shown.end)}" if shown else "")
+            row: list = [Paragraph(f"<b>L{p + 1}</b>{when}", ParagraphStyle("p", parent=cell, alignment=1))]
             for d in range(cal.days):
                 idxs = cover.get((d, p), [])
                 owner = idxs[0] if len(idxs) == 1 else None
@@ -296,6 +304,9 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
                     row.append("")
                     continue
                 lines = _cell_text(k, sessions, idxs, first)  # type: ignore[arg-type]
+                if first and d in cal.day_times:
+                    lines = [cal.time_label(d, p, sessions[owner]["length"]) or "", *lines]
+                    lines = [x for x in lines if x]
                 row.append(Paragraph("<br/>".join(escape(x) for x in lines), cell if len(idxs) == 1 else tiny))
                 if owner is not None:
                     rgb = course_rgb(sessions[owner]["course_code"])

@@ -2,7 +2,13 @@
 
 export type RoomKind = "classroom" | "lab" | "hall";
 
-export interface Calendar { day_names: string[]; lectures_per_day: number; break_after: number[] }
+/** One lecture's clock times, 24-hour "HH:MM". */
+export interface LectureTime { start: string; end: string }
+export interface Calendar {
+  day_names: string[]; lectures_per_day: number; break_after: number[];
+  times?: LectureTime[]; // one per lecture; empty or missing = just "L1", "L2", ...
+  day_times?: Record<number, LectureTime[]>; // days that run to their own clock
+}
 export interface Room { id: string; name: string; capacity: number; kind: RoomKind }
 export interface Slot { day: number; lecture: number }
 export interface Faculty {

@@ -7,6 +7,7 @@ import { ShareDialog } from "./ShareDialog";
 import { Grid } from "./Grid";
 import { WorkloadImport } from "./WorkloadImport";
 import { lock, pinnedKeys, unlock } from "./pins";
+import { timeLabel } from "./times";
 import { changeRoom, moveSession, placementsFor, sessionKey } from "./timetable";
 import type {
   ConflictReport, Institution, InstitutionSummary, Pin, Placement, Quality, UploadIssue, ViewKind,
@@ -469,7 +470,8 @@ export default function App() {
                       <section>
                         <h3>{selOffering.course_code}</h3>
                         <p className="muted">{inst.courses.find((c) => c.code === selOffering.course_code)?.name}</p>
-                        <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}</p>
+                        <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}
+                          {timeLabel(inst.calendar, sel.day, sel.start, sel.length) && <> · {timeLabel(inst.calendar, sel.day, sel.start, sel.length)}</>}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
                         {editable && (pinned.has(sessionKey(sel)) ? (

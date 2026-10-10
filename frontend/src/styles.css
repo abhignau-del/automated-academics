@@ -213,3 +213,9 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .userstable { width: 100%; } .userstable tr.off td { opacity: .55; } .rowactions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
 .addform { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; } .addform input, .addform select { padding: 6px 8px; flex: 1 1 140px; }
 .modal-card h4 { margin: 14px 0 4px; }
+.grid-time { flex-direction: column; } .grid-time small { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.cardtime { display: block; font-size: 10px; opacity: .8; }
+.timesfield .timesfill { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 6px 0; }
+.timesfield .timesfill label { display: grid; gap: 2px; font-size: 12px; } .timesfield .timesfill input { width: 110px; padding: 4px 6px; }
+.timestable { border-collapse: collapse; margin: 6px 0; } .timestable th, .timestable td { padding: 3px 8px; text-align: left; } .timestable input { padding: 3px 6px; }
+.daytimes { margin-top: 10px; } .daytime { margin: 4px 0; }

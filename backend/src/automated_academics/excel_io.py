@@ -22,6 +22,7 @@ soft goal matters (whole numbers, 0 switches a goal off; blank uses the default)
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Callable
@@ -38,6 +39,7 @@ from .models import (
     Course,
     Faculty,
     Institution,
+    LectureTime,
     Level,
     Offering,
     Pin,
@@ -151,6 +153,35 @@ def _collect(ws, sheet: str, issues: list[ImportIssue], build: Callable[[dict], 
     return out
 
 
+def _times_text(rows: list[LectureTime]) -> str:
+    return "; ".join(f"{LectureTime.pretty(t.start)}-{LectureTime.pretty(t.end)}" for t in rows)
+
+
+def _times(raw, field: str) -> list[LectureTime]:
+    """"9:30-10:30; 10:30-11:30" (a hyphen, en dash or "to" between the two times) -> lecture times."""
+    out = []
+    for part in [p.strip() for p in _text(raw).replace("\n", ";").split(";") if p.strip()]:
+        halves = re.split(r"\s*(?:-|\u2013|\u2014|\bto\b)\s*", part, maxsplit=1, flags=re.I)
+        if len(halves) != 2:
+            raise ValueError(f"{field}: {part!r} should look like 9:30-10:30")
+        out.append(LectureTime(start=_clock_text(halves[0]), end=_clock_text(halves[1])))
+    return out
+
+
+def _clock_text(x: str) -> str:
+    """Timetables are written "8 TO 8.50" or "9:30 am"; make that "8:00" / "8:50" / "9:30" for the model."""
+    x = x.strip().lower()
+    pm = x.endswith("pm")
+    x = re.sub(r"\s*[ap]m$", "", x)
+    x = re.sub(r"(\d)\.(\d{2})\b", r"\1:\2", x)
+    if re.fullmatch(r"\d{1,2}", x):
+        x += ":00"
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", x)
+    if pm and m and int(m.group(1)) < 12:
+        x = f"{int(m.group(1)) + 12}:{m.group(2)}"
+    return x
+
+
 def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
     kv = {}
     for row in ws.iter_rows(min_row=2, values_only=True):
@@ -162,7 +193,13 @@ def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
         days = _split(kv.get("day_names")) or Calendar().day_names
         lectures = _int(kv.get("lectures_per_day") or 7, "lectures_per_day")
         breaks = [_int(b, "break_after") - 1 for b in _split(kv.get("break_after"))]
-        cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks)
+        times = _times(kv.get("lecture_times"), "lecture_times")
+        day_times = {}
+        for i, d in enumerate(days):
+            raw = kv.get(f"lecture_times_{d}".lower())
+            if _text(raw):
+                day_times[i] = _times(raw, f"lecture_times_{d}")
+        cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks, times=times, day_times=day_times)
     except (ValueError, ValidationError) as e:
         issues.append(ImportIssue("Institution", None, str(e)))
     try:
@@ -303,6 +340,10 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     ws.append(["day_names", ", ".join(cal.day_names)])
     ws.append(["lectures_per_day", cal.lectures_per_day])
     ws.append(["break_after", ", ".join(str(b + 1) for b in cal.break_after)])
+    if cal.times:
+        ws.append(["lecture_times", _times_text(cal.times)])
+    for d, rows in sorted(cal.day_times.items()):
+        ws.append([f"lecture_times_{cal.day_names[d]}", _times_text(rows)])
     for m in METRICS:
         ws.append([f"weight_{m}", getattr(inst.weights, m)])
     _style(ws)

@@ -191,6 +191,11 @@ sample* to see a worked example) and fill in the **Data** tab:
   once to two programmes). On the Offerings tab, a **Joint classes** panel suggests offerings with the same course
   and teacher for different classes, and **Combine** merges them (it warns if the weekly lectures differ or no room
   holds everyone). Tick rows and use **Combine as joint class** / **Split joint class** to do it by hand.
+- **Lecture times (optional):** Settings → *Lecture times*. Fill every lecture from a first start time, a length, the gap
+  between lectures and a longer gap at a break, then change any single time by hand. A day that runs to another clock (a short
+  Saturday) can have its own times. The grid, a session's details, teacher availability, PDFs and Excel exports then say
+  "9:30–10:30" next to L1, L2 …. In Excel the settings sheet takes `lecture_times` (`8 to 8.50; 9:00-9:50; …`, any of
+  the usual ways of writing times) and `lecture_times_Sat` for a day of its own. With no times set, nothing changes.
 - **Availability:** each teacher has a clickable week. One click marks a slot "would rather avoid", two make it
   unavailable, three clear it; click a day or lecture heading to block a whole line
 

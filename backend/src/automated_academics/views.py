@@ -63,5 +63,6 @@ def session_views(inst: Institution, tt: Timetable, kind: Kind, ident: str) -> l
             "batch_ids": o.batch_ids, "room_id": p.room_id, "room_name": rooms[p.room_id].name,
             "day": p.day, "day_name": cal.day_names[p.day],
             "start": p.start, "length": p.length,
+            "time": cal.time_label(p.day, p.start, p.length),  # "9:30-11:30", or None if no times are set
         })
     return out

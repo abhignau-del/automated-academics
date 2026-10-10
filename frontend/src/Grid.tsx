@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { timeLabel, timesOn, range } from "./times";
 import { assignLanes, blockFits, courseColour, sessionKey } from "./timetable";
 import type { Institution, Placement, ViewKind } from "./types";
 
@@ -70,7 +71,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
   };
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: `64px repeat(${cal.day_names.length}, minmax(120px, 1fr))` }}>
+    <div className="grid" style={{ gridTemplateColumns: `80px repeat(${cal.day_names.length}, minmax(120px, 1fr))` }}>
       <div className="grid-corner" />
       {cal.day_names.map((d) => <div key={d} className="grid-day">{d}</div>)}
 
@@ -78,6 +79,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
         {Array.from({ length: cal.lectures_per_day }, (_, p) => (
           <div key={p} className={"grid-time" + (cal.break_after.includes(p) ? " break" : "")} style={{ height: ROW_H }}>
             <b>L{p + 1}</b>
+            {timesOn(cal, 0).length > 0 && <small>{range(cal.times?.[p] ?? timesOn(cal, 0)[p])}</small>}
           </div>
         ))}
       </div>
@@ -135,6 +137,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
                 onDragEnd={() => { drag.current = null; setHover(null); }}
               >
                 <strong>{locked && <span aria-label="locked" role="img">🔒 </span>}{info.code}</strong>
+                {cal.day_times?.[day] && <small className="cardtime">{timeLabel(cal, day, p.start, p.length)}</small>}
                 <span>{info.name}</span>
                 {info.lines.map((l, i) => <em key={i}>{l}</em>)}
               </div>
