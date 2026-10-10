@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 (2026-10-10)
+
+Import an existing timetable. Existing data, workbooks and databases keep working.
 
 - **Import an existing timetable.** + New → *Import an existing timetable…* reads timetable grids (a block per class, days
   across, lectures down, "Subject (Teacher)" in the cells) into a new institution: classes and their rooms from the headings,
