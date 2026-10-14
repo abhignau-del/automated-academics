@@ -13,6 +13,7 @@ interface Props {
   pinned: Set<string>; // sessions fixed in place; they can't be dragged
   readOnly?: boolean; // a viewer: nothing can be dragged
   viewId?: string; // which class / teacher / room is shown (a class's clock labels the side)
+  canMove?: (offeringId: string) => boolean; // a limited editor moves only their own sessions
   selected: string | null;
   onSelect: (key: string | null) => void;
   onMove: (key: string, day: number, start: number) => void;
@@ -20,7 +21,7 @@ interface Props {
 
 interface Hover { day: number; start: number; length: number; ok: boolean }
 
-export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = false, viewId, selected, onSelect, onMove }: Props) {
+export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = false, viewId, canMove, selected, onSelect, onMove }: Props) {
   const cal = inst.calendar;
   const drag = useRef<{ key: string; grab: number; length: number } | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -120,7 +121,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
                 className={cls.join(" ")}
                 role="button"
                 tabIndex={0}
-                draggable={!locked && !readOnly}
+                draggable={!locked && !readOnly && (canMove ? canMove(p.offering_id) : true)}
                 title={`${info.name}\n${info.lines.join(" · ")}`}
                 style={{
                   top: p.start * ROW_H, height: p.length * ROW_H - 2,

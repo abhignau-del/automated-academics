@@ -124,7 +124,12 @@ docker compose up -d        # then open http://localhost:8000
 3. Whoever creates an institution owns it. An owner chooses **Share…** and gives others access as a
    **viewer** (look and download), an **editor** (change data, generate and edit timetables) or another **owner**
    (also share and delete). Administrators see every institution. People see only what is shared with them.
-4. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
+4. An editor can be **limited to some departments** (tick them when sharing, or under the person's access in the Share
+   dialog). A coordinator then maintains their department's teachers, classes, courses and offerings, and moves their own
+   sessions on the timetable. Other departments' rows are shown but locked; rooms and the institution's settings (days,
+   lecture times, goal weights), generating a timetable and replacing it are left to editors of the whole institution, and a
+   joint class between departments needs a person with all of them. The server refuses anything else, whatever the screen shows.
+5. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
    an offer to load the other version.
 
 Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
@@ -394,7 +399,7 @@ font such as Noto Sans.
   lost when you save or reload, and it hasn't been tried beyond about 1,000 offerings. Saving replaces the whole
   institution, so two people editing at once would overwrite each other (last save wins).
 - **Sign-in is optional and basic.** Off by default (single user). In server mode see *Sharing with a team* for what
-  it covers; it has no per-department permissions, single sign-on, e-mail reset or audit log yet.
+  it covers; it has no single sign-on, e-mail reset or audit log yet.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
 - **The Windows app is unsigned and has only been tried on Windows 11.** The release workflow that builds it has
   not run on GitHub yet; the local build and a start-to-export smoke test (`scripts/smoke_app.py`) have.
@@ -422,7 +427,8 @@ font such as Noto Sans.
 - [x] Windows app: extract and double-click, no Python or Node needed
 - [x] Import a workload list; lock sessions in place; plain-language reasons when no timetable exists
 - [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
-- [ ] Per-department permissions, read-only publishing links, single sign-on, audit log
+- [x] Editors limited to some departments
+- [ ] Read-only publishing links, single sign-on, audit log
 - [ ] Browser tests in CI (today the end-to-end journeys are run by hand)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights

@@ -160,8 +160,8 @@ export const patchUser = (id: string, changes: { display_name?: string; password
 export const deleteUser = (id: string) => request<void>(`/users/${id}`, { method: "DELETE" });
 
 export const listMembers = (iid: string) => request<Member[]>(`/institutions/${iid}/members`);
-export const setMember = (iid: string, username: string, role: Member["role"]) =>
-  request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, json("PUT", { role }));
+export const setMember = (iid: string, username: string, role: Member["role"], departments: string[] | null = null) =>
+  request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, json("PUT", { role, departments }));
 export const removeMember = (iid: string, username: string) =>
   request<Member[]>(`/institutions/${iid}/members/${encodeURIComponent(username)}`, { method: "DELETE" });
 

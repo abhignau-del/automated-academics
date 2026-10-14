@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Editors limited to some departments.** In shared mode an editor can be limited to chosen departments (tick them when sharing).
+  They maintain those departments' teachers, classes, courses, offerings and locks and move their own offerings' sessions; other
+  departments' rows are shown locked. Rooms, settings, generating a timetable and keeping an imported one stay with editors of the
+  whole institution, and a joint class between departments needs all of its departments. Enforced on the server by comparing the
+  saved data with the data being saved (the refusal lists what is not allowed); databases gain a `departments` column in place.
 - **Different lecture times per class.** Named **clocks** (Settings → *Classes that keep other hours*) for classes that run to
   other hours, chosen per class in the Classes tab's new Clock column. Grids, PDFs and Excel sheets are labelled with the class's
   own clock; sessions from another clock show their own time on teachers' and rooms' grids; a special day still wins for

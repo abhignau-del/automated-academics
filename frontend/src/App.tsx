@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api";
-import { canDelete, canEdit, canShare, roleOf } from "./access";
+import { canDelete, canEdit, canShare, departmentsOf, roleOf, rowEditable, scopeOf } from "./access";
 import { AccountMenu, useSession } from "./auth";
 import { DataEditor } from "./DataEditor";
 import { ShareDialog } from "./ShareDialog";
@@ -85,6 +85,12 @@ export default function App() {
 
   const role = roleOf(list.find((i) => i.id === iid));
   const editable = canEdit(role); // a viewer can look and download, nothing more
+  const scope = scopeOf(list.find((i) => i.id === iid)); // an editor limited to some departments, or null
+  const canMoveOffering = (offeringId: string) => {
+    if (scope === null || !inst) return true;
+    const o = inst.offerings.find((x) => x.id === offeringId);
+    return !!o && rowEditable(inst, "offerings", o as unknown as Record<string, unknown>, scope);
+  };
   const view = editable ? viewChoice : "timetable";
 
   const menuRef = useRef<HTMLDivElement>(null);
@@ -223,6 +229,8 @@ export default function App() {
   const pinned = useMemo(() => pinnedKeys(inst?.pins ?? []), [inst]);
   const onMove = (key: string, day: number, start: number) => {
     if (!inst || !editable || pinned.has(key)) return;
+    const moving = placements.find((p) => sessionKey(p) === key);
+    if (moving && !canMoveOffering(moving.offering_id)) return;
     const next = moveSession(inst.calendar, placements, key, day, start);
     if (next) commit(next);
   };
@@ -328,7 +336,7 @@ export default function App() {
         {!list.length && <p className="muted">No institutions yet. Start a blank one and enter your data here, or upload an Excel workbook.</p>}
       </aside>
 
-      {sharing && iid && inst && <ShareDialog iid={iid} name={inst.name} onClose={() => setSharing(false)} />}
+      {sharing && iid && inst && <ShareDialog iid={iid} name={inst.name} departments={departmentsOf(inst)} onClose={() => setSharing(false)} />}
       {importing === "workload" && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(null)} />}
       {importing === "grid" && <GridImport onCreated={(id) => afterImport(id, "timetable")} onClose={() => setImporting(null)} />}
 
@@ -362,7 +370,7 @@ export default function App() {
             {/* kept mounted (just hidden) so unsaved edits survive switching tabs */}
             {editable && <div hidden={view !== "data"}>
               <DataEditor iid={iid} institution={inst} onSaved={reloadInstitution} onDirtyChange={setDataDirty} canDelete={canDelete(role)}
-                onDeleted={() => { setDataDirty(false); setView("timetable"); setIid(null); refreshList(); }} />
+                onDeleted={() => { setDataDirty(false); setView("timetable"); setIid(null); refreshList(); }} scope={scope} />
             </div>}
           </>
         )}
@@ -389,8 +397,9 @@ export default function App() {
                 </select>
               </label>
               <button className="btn primary" onClick={onSolve}
-                disabled={!editable || solving || dataErrors > 0 || inst.offerings.length === 0 || dataDirty}
-                title={dataErrors > 0 ? `Fix the ${dataErrors} problem${dataErrors === 1 ? "" : "s"} in the Data tab first`
+                disabled={!editable || scope !== null || solving || dataErrors > 0 || inst.offerings.length === 0 || dataDirty}
+                title={scope !== null ? "You edit only some departments, so you can't generate the whole institution's timetable"
+                  : dataErrors > 0 ? `Fix the ${dataErrors} problem${dataErrors === 1 ? "" : "s"} in the Data tab first`
                   : inst.offerings.length === 0 ? "Add some offerings in the Data tab first"
                   : dataDirty ? "Save or discard your changes in the Data tab first" : undefined}>
                 {solving ? "Generating…" : jobId ? "Regenerate" : "Generate timetable"}
@@ -466,7 +475,7 @@ export default function App() {
 
                 <div className="work">
                   <Grid inst={inst} items={items} kind={kind} conflictOfferings={conflictOfferings}
-                    pinned={pinned} readOnly={!editable} viewId={viewId} selected={selected} onSelect={setSelected} onMove={onMove} />
+                    pinned={pinned} readOnly={!editable} viewId={viewId} canMove={canMoveOffering} selected={selected} onSelect={setSelected} onMove={onMove} />
 
                   <div className="side">
                     {sel && selOffering ? (
@@ -477,7 +486,7 @@ export default function App() {
                           {timeLabel(inst.calendar, sel.day, sel.start, sel.length, clockOfOffering(inst, selOffering)) && <> · {timeLabel(inst.calendar, sel.day, sel.start, sel.length, clockOfOffering(inst, selOffering))}</>}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
-                        {editable && (pinned.has(sessionKey(sel)) ? (
+                        {editable && canMoveOffering(sel.offering_id) && (pinned.has(sessionKey(sel)) ? (
                           <button className="btn" onClick={() => savePins(unlock(inst.pins, new Set([sessionKey(sel)])))} disabled={dataDirty}>
                             🔓 Unlock this session
                           </button>

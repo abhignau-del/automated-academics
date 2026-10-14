@@ -52,6 +52,7 @@ export interface Timetable {
 export interface InstitutionSummary {
   id: string; name: string; created_at: string; updated_at: string;
   role?: "owner" | "editor" | "viewer"; // absent when sign-in is off or you are an administrator
+  departments?: string[] | null; // an editor limited to these departments; null / absent = the whole institution
 }
 export interface Job {
   id: string; institution_id: string; status: "queued" | "running" | "done" | "failed";
@@ -94,4 +95,7 @@ export interface CheckResult { valid: boolean; issues: DataIssue[] }
 export interface AuthUser { id: string; username: string; display_name: string; role: "admin" | "member" }
 export interface AuthStatus { auth: boolean; setup_needed: boolean; user: AuthUser | null }
 export interface UserRow extends AuthUser { disabled: boolean }
-export interface Member { id: string; username: string; display_name: string; role: "owner" | "editor" | "viewer" }
+export interface Member {
+  id: string; username: string; display_name: string; role: "owner" | "editor" | "viewer";
+  departments: string[] | null;
+}

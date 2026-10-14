@@ -11,6 +11,7 @@ import {
 import { SlotGrid } from "./SlotGrid";
 import { TimesEditor } from "./TimesEditor";
 import { removeClock, renameClock, withLectureCount } from "./times";
+import { rowEditable, settingsEditable } from "./access";
 import type { Calendar, CheckResult, DataIssue, Faculty, Institution, Section, Weights } from "./types";
 
 const TABS: { key: Section; label: string }[] = [
@@ -224,9 +225,10 @@ const pickIssue = (issues: DataIssue[], key: string): DataIssue | undefined =>
 interface RowProps {
   table: TableKey; index: number; row: Row; issues: DataIssue[]; selected: boolean;
   opts: Record<string, Opt[]>; cal: Calendar; open: boolean; act: Actions;
+  locked: boolean; // belongs to a department this person may not change: shown, not editable
 }
 
-const DataRow = memo(function DataRow({ table, index, row, issues, selected, opts, cal, open, act }: RowProps) {
+const DataRow = memo(function DataRow({ table, index, row, issues, selected, opts, cal, open, act, locked }: RowProps) {
   const cols = shownColumns(table);
   const id = String(row[ID_FIELD[table]] ?? "");
   const notes = issues.filter((i) => !i.field);
@@ -261,7 +263,7 @@ const DataRow = memo(function DataRow({ table, index, row, issues, selected, opt
 
   return (
     <>
-      <tr data-row={index} className={selected ? "selected" : ""}>
+      <tr data-row={index} className={(selected ? "selected " : "") + (locked ? "locked" : "")} {...(locked ? { inert: true, title: "Belongs to a department you can't change" } : {})}>
         <td className="selcell">
           <input type="checkbox" aria-label={`select row ${index + 1}`} checked={selected} onChange={(e) => act.select(table, id, e.target.checked)} />
         </td>
@@ -397,11 +399,12 @@ interface Props {
   onDeleted: () => void;
   onDirtyChange: (dirty: boolean) => void;
   canDelete?: boolean; // only an owner may delete (default true: sign-in off)
+  scope?: string[] | null; // departments an editor is limited to; null / absent = the whole institution
 }
 
 type SetDraft = (next: Institution | ((d: Institution) => Institution), key?: string) => void;
 
-export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange, canDelete = true }: Props) {
+export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange, canDelete = true, scope = null }: Props) {
   const [hist, setHist] = useState<History<Institution>>(() => initHistory(institution));
   const draft = hist.present;
   const draftRef = useRef(draft);
@@ -657,7 +660,15 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
           {filter && <span className="muted small">{visible.length} of {rows.length}</span>}
           <span className="spacer" />
           <button type="button" className="btn small" onClick={() => setPasting(table)}>Paste from spreadsheet…</button>
-          <button type="button" className="btn" onClick={() => setDraft((d) => addRow(d, table))}>+ {NOUN[table].add}</button>
+          <button type="button" className="btn" disabled={scope !== null && table === "rooms"} title={scope !== null && table === "rooms" ? "Rooms are shared by every department" : undefined}
+            onClick={() => setDraft((d) => {
+              const next = addRow(d, table);
+              if (scope === null || !scope[0] || table === "rooms" || table === "offerings") return next;
+              // the new row is added last: it goes to this person's department, not whichever came before it
+              const rows = next[table] as unknown as Row[];
+              const patched = rows.map((r, k) => (k === rows.length - 1 ? { ...r, department: scope[0] } : r));
+              return { ...next, [table]: patched } as Institution;
+            })}>+ {NOUN[table].add}</button>
         </div>
         {ids.length > 0 && (
           <BulkBar table={table} count={ids.length} opts={tableOpts[table]}
@@ -674,7 +685,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
               <th className="selcell">
                 <input type="checkbox" aria-label="select all shown rows" checked={allShown}
                   onChange={(e) => {
-                    const shownIds = drawn.map((i) => String(rows[i][idKey]));
+                    const shownIds = drawn.filter((i) => rowEditable(draft, table, rows[i], scope)).map((i) => String(rows[i][idKey]));
                     setSelected((s) => ({ ...s, [table]: e.target.checked ? [...new Set([...s[table], ...shownIds])] : s[table].filter((x) => !shownIds.includes(x)) }));
                   }} />
               </th>
@@ -687,7 +698,8 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
             {drawn.map((i) => (
               <DataRow key={i} table={table} index={i} row={rows[i]} issues={issueMap.get(`${table}:${i}`) ?? NO_ISSUES}
                 selected={chosen.has(String(rows[i][idKey]))} opts={tableOpts[table]} cal={draft.calendar}
-                open={table === "faculty" && openFaculty === String(rows[i].id)} act={act} />
+                open={table === "faculty" && openFaculty === String(rows[i].id)} act={act}
+                locked={!rowEditable(draft, table, rows[i], scope)} />
             ))}
           </tbody>
         </table>
@@ -779,8 +791,15 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
         })}
       </div>
 
+      {scope !== null && (
+        <p className="scopenote" role="note">
+          You can change the data of <b>{scope.join(", ")}</b>. Other departments' rows, the rooms and the settings are shown but locked,
+          because they are shared. Ask an editor of the whole institution for those.
+        </p>
+      )}
+
       {tab === "settings" && (
-        <div className="settings">
+        <fieldset className="settings" disabled={!settingsEditable(scope)}>
           <label>Institution name
             <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value }, "settings.name")}
               className={inSection("settings").some((i) => i.field === "name" && i.level === "error") ? "bad" : ""} />
@@ -835,7 +854,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
           {inSection("settings").filter((i) => i.field !== "lectures_per_day").map((i, k) => (
             <p key={k} className={"setting-note " + i.level}>{i.message}</p>
           ))}
-        </div>
+        </fieldset>
       )}
 
       {tab === "pins" && (

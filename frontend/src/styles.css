@@ -224,3 +224,8 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 
 .importform label.check { display: flex; align-items: center; gap: 6px; align-self: end; }
 .clocks { margin-top: 12px; } .clockname { font-weight: 600; padding: 3px 6px; min-width: 200px; } .clockname.bad { border-color: var(--bad); }
+tr.locked { opacity: .55; } tr.locked td { background: repeating-linear-gradient(135deg, transparent 0 8px, rgba(0,0,0,.03) 8px 16px); }
+.scopenote { padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin: 8px 0; }
+fieldset.settings { border: 0; padding: 0; margin: 0; min-width: 0; }
+.deptscope { margin-top: 4px; font-size: 12px; } .deptscope .check { display: flex; gap: 6px; }
+.deptpick { margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; } .deptpick .check { display: inline-flex; gap: 4px; margin-right: 12px; }
