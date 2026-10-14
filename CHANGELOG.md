@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.8.0 (2026-10-14)
+
+Per-class lecture times and department-limited editors. Existing data, workbooks and databases keep working; databases gain a
+`departments` column in place, and data without clocks or limits behaves exactly as before.
 
 - **Editors limited to some departments.** In shared mode an editor can be limited to chosen departments (tick them when sharing).
   They maintain those departments' teachers, classes, courses, offerings and locks and move their own offerings' sessions; other
