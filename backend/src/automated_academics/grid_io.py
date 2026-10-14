@@ -380,18 +380,40 @@ def import_grid(source: str | Path | BinaryIO, options: GridOptions | None = Non
 
     label_sets = Counter(tuple(b.time_labels) for b in blocks if len(b.time_labels) == lectures and any(re.search(r"\d", x) for x in b.time_labels))
     times: list[LectureTime] = []
-    if label_sets:
-        best, count = label_sets.most_common(1)[0]
+    clocks: dict[str, list[LectureTime]] = {}
+    clock_of_labels: dict[tuple[str, ...], str] = {}  # a set of written times -> the name of the clock it became
+
+    def parse(labels: tuple[str, ...]) -> list[LectureTime] | None:
         try:
-            times = _times("; ".join(re.sub(r"\s+", " ", x) for x in best), "lecture times")
-            if len(times) != lectures:
-                times = []
+            rows = _times("; ".join(re.sub(r"\s+", " ", x) for x in labels), "lecture times")
+            Calendar(day_names=["Mon"], lectures_per_day=lectures, break_after=[], times=rows)  # in order, right length
+            return rows if len(rows) == lectures else None
         except ValueError:
-            times = []
-        if len(label_sets) > 1:
-            report.problems.append(
-                f"{len(label_sets)} different sets of lecture times are written on the grids; the most common one "
-                f"({count} classes) is used for everyone. Lecture times can't differ by class.")
+            return None
+
+    if label_sets:
+        ordered = [lab for lab, _ in label_sets.most_common()]
+        for k, labels in enumerate(ordered):
+            rows = parse(labels)
+            if rows is None:
+                if k == 0:
+                    continue
+                report.problems.append("One set of lecture times written on the grids could not be read, so its classes use the default times.")
+                continue
+            if not times and k == 0:
+                times = rows
+                continue
+            mins = lambda c: int(c[:2]) * 60 + int(c[3:])  # noqa: E731
+            name = f"{mins(rows[0].end) - mins(rows[0].start)}-minute lectures"
+            if name in clocks:
+                name = f"{name} from {LectureTime.pretty(rows[0].start)}"
+            while name in clocks:
+                name += "'"
+            clocks[name] = rows
+            clock_of_labels[labels] = name
+            users = sum(1 for b in blocks if tuple(b.time_labels) == labels)
+            report.assumptions.append(f"{users} class(es) keep other hours; their times became the clock {name!r}: "
+                                      + ", ".join(f"{LectureTime.pretty(t.start)}-{LectureTime.pretty(t.end)}" for t in rows) + ".")
     if times:
         report.assumptions.append(f"Lecture times: {', '.join(t.start + '-' + t.end for t in times)} (read from the first column).")
     else:
@@ -409,12 +431,14 @@ def import_grid(source: str | Path | BinaryIO, options: GridOptions | None = Non
                                   + (" (a row marked as a break)." if any(blk.breaks for blk in blocks) else " (a longer gap in the times)."))
     else:
         report.assumptions.append("No break was found, so a double lecture may run across any two lectures.")
-    cal = Calendar(**cal_kwargs, break_after=breaks, times=times) if times else Calendar(**cal_kwargs, break_after=breaks)
+    cal = (Calendar(**cal_kwargs, break_after=breaks, times=times, clocks=clocks) if times
+           else Calendar(**cal_kwargs, break_after=breaks))
     if times:
         try:
             Calendar.model_validate(cal.model_dump())
         except ValueError:
             cal = Calendar(**cal_kwargs, break_after=breaks)
+            clock_of_labels = {}
             report.problems.append("The lecture times didn't form a valid day (out of order or overlapping), so they were left out.")
 
     # 3. cells -> (subject, teacher), with names collected first so bare cells can be split
@@ -504,7 +528,8 @@ def import_grid(source: str | Path | BinaryIO, options: GridOptions | None = Non
             semester = int(tok) if tok.isdigit() else roman.get(tok, 1)
         bid = _slug(name, taken_batch)
         batches.append(Batch(id=bid, program=name, level=_level(name), semester=semester, section="A",
-                             department="General", strength=opt.default_students))
+                             department="General", strength=opt.default_students,
+                             clock=clock_of_labels.get(tuple(b.time_labels)) if cal.times else None))
         if b.room:
             rid = "R-" + re.sub(r"[^A-Za-z0-9]+", "", b.room)
             rooms.setdefault(rid, Room(id=rid, name=f"Room {b.room}", capacity=opt.seats))

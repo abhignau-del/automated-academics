@@ -194,8 +194,15 @@ sample* to see a worked example) and fill in the **Data** tab:
 - **Lecture times (optional):** Settings → *Lecture times*. Fill every lecture from a first start time, a length, the gap
   between lectures and a longer gap at a break, then change any single time by hand. A day that runs to another clock (a short
   Saturday) can have its own times. The grid, a session's details, teacher availability, PDFs and Excel exports then say
-  "9:30–10:30" next to L1, L2 …. In Excel the settings sheet takes `lecture_times` (`8 to 8.50; 9:00-9:50; …`, any of
-  the usual ways of writing times) and `lecture_times_Sat` for a day of its own. With no times set, nothing changes.
+  "9:30–10:30" next to L1, L2 …. Classes that keep other hours (50-minute and 40-minute lectures, a morning and an
+  evening batch) get a **named clock**: add it under *Classes that keep other hours*, then choose it in the Classes tab's
+  Clock column. A class's own grid, PDF and Excel sheet are labelled with its clock; on a teacher's or room's grid a session
+  from another clock shows its own time. Lecture numbers stay the same across clocks, so a teacher is still kept to one place
+  per lecture number: if classes on different clocks share a teacher and their lectures would overlap in real time, a
+  warning says so. A day that runs differently for everyone (a short Saturday) overrides every clock. In Excel the settings
+  sheet takes `lecture_times` (`8 to 8.50; 9:00-9:50; …`, any of
+  the usual ways of writing times) and `lecture_times_Sat` for a day of its own, `clock_<name>` for a named clock (and a `clock` column on the
+  Batches sheet). With no times set, nothing changes.
 - **Availability:** each teacher has a clickable week. One click marks a slot "would rather avoid", two make it
   unavailable, three clear it; click a day or lecture heading to block a whole line
 

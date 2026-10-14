@@ -1,6 +1,6 @@
 // Clock times of the lectures ("9:30-10:30"). Optional: with none set the app just says L1, L2, ...
 
-import type { Calendar, LectureTime } from "./types";
+import type { Calendar, Institution, LectureTime, Offering } from "./types";
 
 const toMinutes = (clock: string): number => {
   const [h, m] = clock.split(":").map(Number);
@@ -20,12 +20,30 @@ export const pretty = (clock: string): string => {
 
 export const range = (t: LectureTime): string => `${pretty(t.start)}–${pretty(t.end)}`;
 
-/** The times a day runs to: its own, if it has any, else the default ones. */
-export const timesOn = (cal: Calendar, day: number): LectureTime[] => cal.day_times?.[day] ?? (cal.times ?? []);
+/**
+ * The times that apply: a day that runs to its own clock, else the class's clock, else the institution's default.
+ * (Same order as the server.)
+ */
+export const timesOn = (cal: Calendar, day: number, clock?: string | null): LectureTime[] =>
+  cal.day_times?.[day] ?? (clock ? cal.clocks?.[clock] : undefined) ?? (cal.times ?? []);
+
+/** The times written down the side of a grid: a class's clock, or the default. */
+export const sideTimes = (cal: Calendar, clock?: string | null): LectureTime[] =>
+  (clock ? cal.clocks?.[clock] : undefined) ?? (cal.times ?? []);
+
+/** The clock a class keeps: its own, or its parent's for a practical group. */
+export function clockOfBatch(inst: Institution, id: string | null | undefined): string | null {
+  const b = inst.batches.find((x) => x.id === id);
+  if (!b) return null;
+  return b.clock ?? (b.group_of ? inst.batches.find((x) => x.id === b.group_of)?.clock ?? null : null);
+}
+
+/** An offering runs on the clock of its first class. */
+export const clockOfOffering = (inst: Institution, o: Pick<Offering, "batch_ids">): string | null => clockOfBatch(inst, o.batch_ids[0]);
 
 /** "9:30-11:30" for the block starting at lecture `start` on `day`, or null when no times are set. */
-export function timeLabel(cal: Calendar, day: number, start: number, length = 1): string | null {
-  const rows = timesOn(cal, day);
+export function timeLabel(cal: Calendar, day: number, start: number, length = 1, clock?: string | null): string | null {
+  const rows = timesOn(cal, day, clock);
   if (!rows.length || start < 0 || start + length > rows.length) return null;
   return `${pretty(rows[start].start)}–${pretty(rows[start + length - 1].end)}`;
 }
@@ -77,5 +95,29 @@ export function resizeTimes(rows: LectureTime[], count: number): LectureTime[] {
 export function withLectureCount(cal: Calendar, count: number): Calendar {
   const day_times: Record<number, LectureTime[]> = {};
   for (const [d, rows] of Object.entries(cal.day_times ?? {})) day_times[Number(d)] = resizeTimes(rows, count);
-  return { ...cal, lectures_per_day: count, times: resizeTimes(cal.times ?? [], count), day_times };
+  const clocks: Record<string, LectureTime[]> = {};
+  for (const [n, rows] of Object.entries(cal.clocks ?? {})) clocks[n] = resizeTimes(rows, count);
+  return { ...cal, lectures_per_day: count, times: resizeTimes(cal.times ?? [], count), day_times, clocks };
+}
+
+/** Rename a clock, and move the classes that keep it. */
+export function renameClock(inst: Institution, from: string, to: string): Institution {
+  const clocks = inst.calendar.clocks ?? {};
+  if (from === to || !(from in clocks) || to in clocks || !to.trim()) return inst;
+  const renamed = Object.fromEntries(Object.entries(clocks).map(([n, rows]) => [n === from ? to : n, rows]));
+  return {
+    ...inst,
+    calendar: { ...inst.calendar, clocks: renamed },
+    batches: inst.batches.map((b) => (b.clock === from ? { ...b, clock: to } : b)),
+  };
+}
+
+/** Remove a clock; the classes that kept it go back to the institution's own times. */
+export function removeClock(inst: Institution, name: string): Institution {
+  const { [name]: _gone, ...rest } = inst.calendar.clocks ?? {};
+  return {
+    ...inst,
+    calendar: { ...inst.calendar, clocks: rest },
+    batches: inst.batches.map((b) => (b.clock === name ? { ...b, clock: null } : b)),
+  };
 }

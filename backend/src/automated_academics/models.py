@@ -77,6 +77,9 @@ class Calendar(BaseModel):
     # per-day replacements for days that run to a different clock (e.g. a short Saturday).
     times: list[LectureTime] = []
     day_times: dict[int, list[LectureTime]] = {}
+    # Named alternative clocks for classes that keep different hours (50-minute and 40-minute lectures, a morning
+    # and an evening batch). A class picks one with `Batch.clock`; a day in `day_times` overrides it for everyone.
+    clocks: dict[str, list[LectureTime]] = {}
 
     @model_validator(mode="after")
     def _times_make_sense(self) -> "Calendar":
@@ -94,14 +97,19 @@ class Calendar(BaseModel):
             if not 0 <= d < len(self.day_names):
                 raise ValueError(f"lecture times given for day {d + 1}, which is not one of the {len(self.day_names)} days")
             check(rows, f"the lecture times for {self.day_names[d]}")
+        for name, rows in self.clocks.items():
+            if not name.strip():
+                raise ValueError("a clock needs a name")
+            check(rows, f"the clock {name!r}")
         return self
 
-    def times_on(self, day: int) -> list[LectureTime]:
-        return self.day_times.get(day) or self.times
+    def times_on(self, day: int, clock: str | None = None) -> list[LectureTime]:
+        """The lecture times that apply: a day that runs to its own clock, else the class's clock, else the default."""
+        return self.day_times.get(day) or (self.clocks.get(clock) if clock else None) or self.times
 
-    def time_label(self, day: int, start: int, length: int = 1) -> str | None:
+    def time_label(self, day: int, start: int, length: int = 1, clock: str | None = None) -> str | None:
         """"9:30-10:30" for the block starting at lecture `start` on `day`, or None if no times are set."""
-        rows = self.times_on(day)
+        rows = self.times_on(day, clock)
         if not rows or start < 0 or start + length > len(rows):
             return None
         return f"{LectureTime.pretty(rows[start].start)}\u2013{LectureTime.pretty(rows[start + length - 1].end)}"
@@ -161,6 +169,8 @@ class Batch(BaseModel):
     # The parent's sessions occupy every sub-group; sub-group sessions occupy
     # only themselves (the parent is free to run other sub-groups in parallel).
     group_of: str | None = None
+    # Name of one of `Calendar.clocks` when this class keeps different hours; None = the institution's own times.
+    clock: str | None = None
 
 
 class Course(BaseModel):
@@ -237,7 +247,21 @@ class Institution(BaseModel):
         for b in self.batches:
             if b.group_of is not None and b.group_of not in batches:
                 raise ValueError(f"{b.id}: unknown parent batch {b.group_of}")
+            if b.clock is not None and b.clock not in self.calendar.clocks:
+                raise ValueError(f"{b.id}: unknown clock {b.clock!r}")
         return self
+
+    def clock_of_batch(self, batch_id: str) -> str | None:
+        """The clock a class keeps: its own, or (for a practical group) its parent's; None = the default."""
+        by_id = {b.id: b for b in self.batches}
+        b = by_id.get(batch_id)
+        if b is None:
+            return None
+        return b.clock or (by_id[b.group_of].clock if b.group_of in by_id else None)
+
+    def clock_of_offering(self, offering: "Offering") -> str | None:
+        """An offering runs on the clock of its first class (a joint class of mixed clocks follows its first)."""
+        return self.clock_of_batch(offering.batch_ids[0]) if offering.batch_ids else None
 
     def occupied_batches(self, batch_ids: list[str]) -> set[str]:
         """Batch ids blocked when `batch_ids` attend: themselves plus their sub-groups."""

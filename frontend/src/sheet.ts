@@ -42,6 +42,7 @@ export const COLUMNS: Record<TableKey, Col[]> = {
     { key: "department", label: "Department", aria: "department", kind: "text" },
     { key: "strength", label: "Students", aria: "students", kind: "number", min: 1, aliases: ["strength"] },
     { key: "group_of", label: "Parent", aria: "parent", kind: "select", aliases: ["groupof"] },
+    { key: "clock", label: "Clock", aria: "clock", kind: "select", aliases: ["timing", "times"] },
   ],
   courses: [
     { key: "code", label: "Code", aria: "id", kind: "id" },
@@ -76,6 +77,9 @@ export function optionsFor(inst: Institution, table: TableKey, key: string): Opt
   if (table === "batches" && key === "level") return LEVELS;
   if (table === "batches" && key === "group_of") {
     return inst.batches.filter((b) => !b.group_of).map((b) => ({ value: b.id, label: b.id, alts: [] }));
+  }
+  if (table === "batches" && key === "clock") {
+    return Object.keys(inst.calendar.clocks ?? {}).map((n) => ({ value: n, label: n, alts: [] }));
   }
   if (table === "offerings" && key === "course_code") {
     return inst.courses.map((c) => ({ value: c.code, label: `${c.code}${c.name ? " — " + c.name : ""}`, alts: c.name ? [c.name] : [] }));
@@ -169,7 +173,7 @@ function parseCell(inst: Institution, table: TableKey, col: Col, text: string): 
     }
     case "select": {
       const v = opts ? matchOption(opts, text) : text.trim();
-      return col.key === "group_of" && v === "" ? null : v;
+      return (col.key === "group_of" || col.key === "clock") && v === "" ? null : v;
     }
     case "ids": {
       const parts = text.split(/[,;]/).map((p) => p.trim()).filter(Boolean);

@@ -133,11 +133,19 @@ def _sheet_name(prefix: str, ident: str, taken: set[str]) -> str:
     return name
 
 
-def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Session]) -> None:
+def _left_label(left: list[LectureTime], start: int, length: int) -> str | None:
+    """What the left-hand time column says for a block starting at lecture `start`."""
+    if not left or start < 0 or start + length > len(left):
+        return None
+    return f"{LectureTime.pretty(left[start].start)}\u2013{LectureTime.pretty(left[start + length - 1].end)}"
+
+
+def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Session], clock: str | None = None) -> None:
     ncols = cal.days + 1
     ws.cell(row=1, column=1, value=title).font = Font(bold=True, size=13)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
 
+    left = cal.clocks.get(clock) or cal.times  # the times written down the side: this class's clock, or the default
     ws.cell(row=2, column=1, value="")
     for d, name in enumerate(cal.day_names):
         c = ws.cell(row=2, column=d + 2, value=name)
@@ -150,7 +158,7 @@ def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Sessio
 
     for p in range(cal.lectures_per_day):
         row = p + 3
-        shown = cal.times[p] if cal.times else None
+        shown = left[p] if left else None
         label = ws.cell(row=row, column=1, value=f"L{p + 1}" + (
             f"\n{LectureTime.pretty(shown.start)}\u2013{LectureTime.pretty(shown.end)}" if shown else ""))
         label.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
@@ -169,8 +177,9 @@ def _write_grid(ws, cal: Calendar, kind: Kind, title: str, sessions: list[Sessio
             if owner in merged and not first:
                 continue  # covered by a merged range
             lines = _cell_text(kind, sessions, idxs, first)
-            if first and d in cal.day_times:  # this day runs to its own clock: say so on the session
-                lines = [cal.time_label(d, p, sessions[owner]["length"]) or "", *lines]
+            own = sessions[owner]["time"] if first else None
+            if own and own != _left_label(left, p, sessions[owner]["length"]):  # runs to another clock: say so
+                lines = [own, *lines]
             cell.value = "\n".join(x for x in lines if x)
             if owner is not None:
                 cell.fill = PatternFill("solid", fgColor=course_hex(sessions[owner]["course_code"]))
@@ -217,7 +226,8 @@ def build_xlsx(inst: Institution, tt: Timetable, out: BinaryIO) -> None:
     taken = {"all sessions"}
     for kind, eid, label, sessions in _selection(inst, tt, None, None):
         ws = wb.create_sheet(_sheet_name(KIND_TITLES[kind], eid, taken))
-        _write_grid(ws, cal, kind, f"{inst.name} · {KIND_TITLES[kind]}: {label}", sessions)
+        clock = inst.clock_of_batch(eid) if kind == "batch" else None
+        _write_grid(ws, cal, kind, f"{inst.name} · {KIND_TITLES[kind]}: {label}", sessions, clock)
     wb.save(out)
 
 
@@ -265,7 +275,7 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
     margin = 1 * cm
     usable_w = page_w - 2 * margin
     row_h = min(2.3 * cm, (page_h - 2 * margin - 3.2 * cm) / cal.lectures_per_day)
-    time_w = 1.2 * cm
+    time_w = 1.9 * cm  # wide enough for "10:00–10:40" on one line
     col_w = (usable_w - time_w) / max(cal.days, 1)
 
     story: list = []
@@ -281,6 +291,8 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
         cover, merge = layout(sessions)
         merged = set(merge)
         starts = {(s["day"], s["start"]): i for i, s in enumerate(sessions)}
+        clock = inst.clock_of_batch(eid) if k == "batch" else None
+        left = cal.clocks.get(clock) or cal.times
 
         data: list[list] = [[""] + [Paragraph(escape(d), head) for d in cal.day_names]]
         style = [
@@ -293,7 +305,7 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
         ]
         for p in range(cal.lectures_per_day):
             r = p + 1
-            shown = cal.times[p] if cal.times else None
+            shown = left[p] if left else None
             when = (f"<br/>{LectureTime.pretty(shown.start)}\u2013{LectureTime.pretty(shown.end)}" if shown else "")
             row: list = [Paragraph(f"<b>L{p + 1}</b>{when}", ParagraphStyle("p", parent=cell, alignment=1))]
             for d in range(cal.days):
@@ -304,9 +316,9 @@ def build_pdf(inst: Institution, tt: Timetable, out: BinaryIO,
                     row.append("")
                     continue
                 lines = _cell_text(k, sessions, idxs, first)  # type: ignore[arg-type]
-                if first and d in cal.day_times:
-                    lines = [cal.time_label(d, p, sessions[owner]["length"]) or "", *lines]
-                    lines = [x for x in lines if x]
+                own = sessions[owner]["time"] if first else None
+                if own and own != _left_label(left, p, sessions[owner]["length"]):
+                    lines = [own, *lines]
                 row.append(Paragraph("<br/>".join(escape(x) for x in lines), cell if len(idxs) == 1 else tiny))
                 if owner is not None:
                     rgb = course_rgb(sessions[owner]["course_code"])

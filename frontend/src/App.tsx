@@ -8,7 +8,7 @@ import { Grid } from "./Grid";
 import { GridImport } from "./GridImport";
 import { WorkloadImport } from "./WorkloadImport";
 import { lock, pinnedKeys, unlock } from "./pins";
-import { timeLabel } from "./times";
+import { clockOfOffering, timeLabel } from "./times";
 import { changeRoom, moveSession, placementsFor, sessionKey } from "./timetable";
 import type {
   ConflictReport, Institution, InstitutionSummary, Pin, Placement, Quality, UploadIssue, ViewKind,
@@ -466,7 +466,7 @@ export default function App() {
 
                 <div className="work">
                   <Grid inst={inst} items={items} kind={kind} conflictOfferings={conflictOfferings}
-                    pinned={pinned} readOnly={!editable} selected={selected} onSelect={setSelected} onMove={onMove} />
+                    pinned={pinned} readOnly={!editable} viewId={viewId} selected={selected} onSelect={setSelected} onMove={onMove} />
 
                   <div className="side">
                     {sel && selOffering ? (
@@ -474,7 +474,7 @@ export default function App() {
                         <h3>{selOffering.course_code}</h3>
                         <p className="muted">{inst.courses.find((c) => c.code === selOffering.course_code)?.name}</p>
                         <p>{inst.calendar.day_names[sel.day]}, L{sel.start + 1}{sel.length > 1 ? `–L${sel.start + sel.length}` : ""}
-                          {timeLabel(inst.calendar, sel.day, sel.start, sel.length) && <> · {timeLabel(inst.calendar, sel.day, sel.start, sel.length)}</>}</p>
+                          {timeLabel(inst.calendar, sel.day, sel.start, sel.length, clockOfOffering(inst, selOffering)) && <> · {timeLabel(inst.calendar, sel.day, sel.start, sel.length, clockOfOffering(inst, selOffering))}</>}</p>
                         <p>Faculty: {inst.faculty.find((f) => f.id === selOffering.faculty_id)?.name}</p>
                         <p>Batches: {selOffering.batch_ids.join(", ")}</p>
                         {editable && (pinned.has(sessionKey(sel)) ? (

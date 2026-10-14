@@ -223,3 +223,4 @@ select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; ba
 .sheetlist { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; }
 
 .importform label.check { display: flex; align-items: center; gap: 6px; align-self: end; }
+.clocks { margin-top: 12px; } .clockname { font-weight: 600; padding: 3px 6px; min-width: 200px; } .clockname.bad { border-color: var(--bad); }

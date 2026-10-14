@@ -110,6 +110,12 @@ def check_institution(data: Any) -> tuple[Institution | None, list[Issue]]:
         if room not in (None, "") and room not in ids["rooms"]:
             issues.append(_error("pins", i, "room_id", f"unknown room {room!r}"))
 
+    clocks = (data.get("calendar") or {}).get("clocks") or {} if isinstance(data.get("calendar"), dict) else {}
+    for i, b in enumerate(batches):
+        c = _get(b, "clock")
+        if isinstance(c, str) and c and c not in clocks:
+            issues.append(_error("batches", i, "clock", f"unknown clock {c!r}"))
+
     inst: Institution | None = None
     try:
         inst = Institution.model_validate(data)
@@ -220,6 +226,50 @@ def diagnose(inst: Institution) -> list[Issue]:
 
     out += _pin_problems(inst)
     out += _room_demand(inst)
+    out += _clock_overlaps(inst)
+    return out
+
+
+# ---------------------------------------------------------------- classes on different clocks
+
+def _clock_overlaps(inst: Institution) -> list[Issue]:
+    """Classes on different clocks that share a teacher can overlap in real time without sharing a lecture number.
+
+    The solver keeps a teacher or room to one place per lecture *number*; it can't see that lecture 2 of a
+    50-minute clock runs into lecture 1 of a 40-minute one. Say so, once per pair of clocks.
+    """
+    cal = inst.calendar
+    if not cal.clocks:
+        return []
+    rows = {None: cal.times, **cal.clocks}
+    rows = {k: v for k, v in rows.items() if v}
+    clock_of = {b.id: inst.clock_of_batch(b.id) for b in inst.batches}
+    by_teacher: dict[str, set[str | None]] = defaultdict(set)
+    for o in inst.offerings:
+        by_teacher[o.faculty_id].add(inst.clock_of_offering(o))
+    sharing: set[frozenset] = set()
+    for clocks in by_teacher.values():
+        clocks = {c for c in clocks if c in rows}
+        for a in clocks:
+            for b in clocks:
+                if a != b and str(a) < str(b):
+                    sharing.add(frozenset((a, b)))
+    out: list[Issue] = []
+
+    def mins(c: str) -> int:
+        return int(c[:2]) * 60 + int(c[3:])
+
+    for pair in sorted(sharing, key=lambda p: sorted(map(str, p))):
+        a, b = sorted(pair, key=str)
+        hit = next(((i, j) for i, ta in enumerate(rows[a]) for j, tb in enumerate(rows[b])
+                    if i != j and mins(ta.start) < mins(tb.end) and mins(tb.start) < mins(ta.end)), None)
+        if hit:
+            na, nb = a or "the default times", b or "the default times"
+            out.append(Issue("warning", "settings", None, "calendar.clocks",
+                             f"Classes on {na!r} and {nb!r} share teachers, and lecture {hit[0] + 1} of one "
+                             f"({rows[a][hit[0]].start}-{rows[a][hit[0]].end}) overlaps lecture {hit[1] + 1} of the other "
+                             f"({rows[b][hit[1]].start}-{rows[b][hit[1]].end}). Teachers are kept to one place per lecture number, so "
+                             "this overlap is not checked; keep the clocks' lectures aligned if they share teachers."))
     return out
 
 

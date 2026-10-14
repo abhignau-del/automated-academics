@@ -10,7 +10,7 @@ import {
 } from "./sheet";
 import { SlotGrid } from "./SlotGrid";
 import { TimesEditor } from "./TimesEditor";
-import { withLectureCount } from "./times";
+import { removeClock, renameClock, withLectureCount } from "./times";
 import type { Calendar, CheckResult, DataIssue, Faculty, Institution, Section, Weights } from "./types";
 
 const TABS: { key: Section; label: string }[] = [
@@ -242,9 +242,10 @@ const DataRow = memo(function DataRow({ table, index, row, issues, selected, opt
       case "number": return <Num label={col.aria} min={col.min} value={value as number} issue={issue} onChange={set} />;
       case "select": {
         const isParent = col.key === "group_of";
+        const nullable = isParent || col.key === "clock"; // blank means "none" / "the default times"
         const options = (opts[`${table}.${col.key}`] ?? []).filter((o) => !(isParent && o.value === id));
-        return <Pick label={col.aria} allowBlank={isParent} list={listId(table, col.key)} value={String(value ?? "")} options={options} issue={issue}
-          onChange={(v) => set(isParent ? v || null : v)} />;
+        return <Pick label={col.aria} allowBlank={nullable} list={listId(table, col.key)} value={String(value ?? "")} options={options} issue={issue}
+          onChange={(v) => set(nullable ? v || null : v)} />;
       }
       case "ids": return <Chips label={col.aria} list={listId(table, col.key)} values={value as string[]} options={opts[`${table}.${col.key}`] ?? []} issue={issue} onChange={set} />;
       case "sessions": return <Sessions value={value as number[]} issue={issue} onChange={set} />;
@@ -366,14 +367,14 @@ function BulkBar({ table, count, opts, onSet, onDuplicate, onDelete, onClear, on
         to
         {col?.kind === "select" && choices ? (
           <select aria-label="new value" value={text} onChange={(e) => setText(e.target.value)}>
-            <option value="">{col.key === "group_of" ? "(none)" : "(choose)"}</option>
+            <option value="">{col.key === "group_of" ? "(none)" : col.key === "clock" ? "(default times)" : "(choose)"}</option>
             {choices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         ) : (
           <input aria-label="new value" value={text} onChange={(e) => setText(e.target.value)}
             placeholder={col?.kind === "ids" ? "S1, S2" : col?.kind === "sessions" ? "1, 1, 1" : ""} />
         )}
-        <button type="button" className="btn small" disabled={!col || (col.kind !== "text" && text === "" && col.key !== "group_of")}
+        <button type="button" className="btn small" disabled={!col || (col.kind !== "text" && text === "" && col.key !== "group_of" && col.key !== "clock")}
           onClick={() => { onSet(key, text); }}>Apply</button>
       </span>
       <button type="button" className="btn small" onClick={onDuplicate}>Duplicate</button>
@@ -470,7 +471,7 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
       if (list) o[`${table}.${col.key}`] = list;
     }
     return o;
-  }, [draft.courses, draft.faculty, draft.batches]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [draft.courses, draft.faculty, draft.batches, draft.calendar.clocks]); // eslint-disable-line react-hooks/exhaustive-deps
   const optsFor1 = (table: TableKey) => Object.fromEntries(Object.entries(allOpts).filter(([k]) => k.startsWith(table + ".")));
   const tableOpts: Record<TableKey, Record<string, Opt[]>> = {
     rooms: useStable(optsFor1("rooms")),
@@ -816,7 +817,10 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
               ))}
             </div>
           </fieldset>
-          <TimesEditor calendar={draft.calendar} onChange={(calendar) => setDraft({ ...draft, calendar }, "settings.times")} />
+          <TimesEditor calendar={draft.calendar} onChange={(calendar) => setDraft({ ...draft, calendar }, "settings.times")}
+            clockUse={Object.fromEntries(Object.keys(draft.calendar.clocks ?? {}).map((n) => [n, draft.batches.filter((b) => b.clock === n).length]))}
+            onRenameClock={(from, to) => setDraft(renameClock(draft, from, to), "settings.clock")}
+            onRemoveClock={(name) => setDraft(removeClock(draft, name))} />
           <fieldset>
             <legend>What makes a good timetable <small className="muted">higher means the solver works harder at it; 0 switches it off</small></legend>
             <div className="weights">

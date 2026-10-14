@@ -17,9 +17,9 @@ const base = (): Institution => ({
     { id: "F2", name: "Ravi Iyer", department: "CS", unavailable: [], avoid: [], max_lectures_per_day: 6 },
   ],
   batches: [
-    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null },
-    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S" },
-    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null },
+    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null, clock: null },
+    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S", clock: null },
+    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null, clock: null },
   ],
   courses: [
     { code: "C1", name: "Maths", department: "CS", credits: 3, category: "DSC", room_kind: "classroom" },

@@ -40,7 +40,7 @@ export function addRow(inst: Institution, table: TableKey): Institution {
         ...inst,
         batches: [...inst.batches, {
           id, program: last?.program ?? "", level: last?.level ?? "UG", semester: last?.semester ?? 1,
-          section: "A", department: last?.department ?? "", strength: 60, group_of: null,
+          section: "A", department: last?.department ?? "", strength: 60, group_of: null, clock: null,
         }],
       };
     }

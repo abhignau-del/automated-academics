@@ -53,7 +53,7 @@ from .quality import METRICS
 SHEETS: dict[str, list[str]] = {
     "Rooms": ["id", "name", "capacity", "kind"],
     "Faculty": ["id", "name", "department", "max_lectures_per_day", "unavailable", "avoid"],
-    "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of"],
+    "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of", "clock"],
     "Courses": ["code", "name", "department", "credits", "category", "room_kind"],
     "Offerings": ["id", "course_code", "faculty_id", "batch_ids", "sessions"],
 }
@@ -184,9 +184,11 @@ def _clock_text(x: str) -> str:
 
 def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
     kv = {}
+    raw_keys: dict[str, str] = {}  # lower-cased key -> as written (a clock's name keeps its capitals)
     for row in ws.iter_rows(min_row=2, values_only=True):
         if row and _text(row[0]):
             kv[_text(row[0]).lower()] = row[1] if len(row) > 1 else None
+            raw_keys[_text(row[0]).lower()] = _text(row[0])
     name = _text(kv.get("name")) or "Institution"
     cal, weights = Calendar(), Weights()
     try:
@@ -194,12 +196,17 @@ def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
         lectures = _int(kv.get("lectures_per_day") or 7, "lectures_per_day")
         breaks = [_int(b, "break_after") - 1 for b in _split(kv.get("break_after"))]
         times = _times(kv.get("lecture_times"), "lecture_times")
+        clocks = {}
+        for low, original in raw_keys.items():
+            if low.startswith("clock_") and _text(kv.get(low)):
+                clocks[original[len("clock_"):].strip()] = _times(kv.get(low), original)
         day_times = {}
         for i, d in enumerate(days):
             raw = kv.get(f"lecture_times_{d}".lower())
             if _text(raw):
                 day_times[i] = _times(raw, f"lecture_times_{d}")
-        cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks, times=times, day_times=day_times)
+        cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks, times=times, day_times=day_times,
+                       clocks=clocks)
     except (ValueError, ValidationError) as e:
         issues.append(ImportIssue("Institution", None, str(e)))
     try:
@@ -250,7 +257,7 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
         id=_text(r["id"]), program=_text(r["program"]), level=_enum(Level, r["level"], "level"),
         semester=_int(r["semester"], "semester"), section=_text(r.get("section")) or "A",
         department=_text(r["department"]), strength=_int(r["strength"], "strength"),
-        group_of=_text(r.get("group_of")) or None))
+        group_of=_text(r.get("group_of")) or None, clock=_text(r.get("clock")) or None))
 
     courses = _collect(wb["Courses"], "Courses", issues, lambda r: Course(
         code=_text(r["code"]), name=_text(r["name"]), department=_text(r["department"]),
@@ -344,6 +351,8 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
         ws.append(["lecture_times", _times_text(cal.times)])
     for d, rows in sorted(cal.day_times.items()):
         ws.append([f"lecture_times_{cal.day_names[d]}", _times_text(rows)])
+    for name, rows in cal.clocks.items():
+        ws.append([f"clock_{name}", _times_text(rows)])
     for m in METRICS:
         ws.append([f"weight_{m}", getattr(inst.weights, m)])
     _style(ws)
@@ -363,7 +372,7 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     sheet("Faculty", [[f.id, f.name, f.department, f.max_lectures_per_day,
                        slot_text(f.unavailable), slot_text(f.avoid)] for f in inst.faculty])
     sheet("Batches", [[b.id, b.program, b.level.value, b.semester, b.section, b.department,
-                       b.strength, b.group_of or ""] for b in inst.batches])
+                       b.strength, b.group_of or "", b.clock or ""] for b in inst.batches])
     sheet("Courses", [[c.code, c.name, c.department, c.credits, c.category, c.room_kind.value]
                       for c in inst.courses])
     sheet("Offerings", [[o.id, o.course_code, o.faculty_id, ", ".join(o.batch_ids),

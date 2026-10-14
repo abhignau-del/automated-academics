@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Different lecture times per class.** Named **clocks** (Settings → *Classes that keep other hours*) for classes that run to
+  other hours, chosen per class in the Classes tab's new Clock column. Grids, PDFs and Excel sheets are labelled with the class's
+  own clock; sessions from another clock show their own time on teachers' and rooms' grids; a special day still wins for
+  everyone. The timetable-grid import turns each distinct set of written times into a named clock instead of forcing the most
+  common one on everybody. Excel gains `clock_<name>` settings and a `clock` column on Batches. A warning appears when classes on
+  different clocks share a teacher and their lectures would overlap in real time. Fixed: the PDF's time column was too narrow
+  and wrapped times such as "10:00–10:40".
 ## v0.7.0 (2026-10-10)
 
 Import an existing timetable. Existing data, workbooks and databases keep working.

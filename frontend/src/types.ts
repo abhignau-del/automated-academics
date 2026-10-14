@@ -8,6 +8,7 @@ export interface Calendar {
   day_names: string[]; lectures_per_day: number; break_after: number[];
   times?: LectureTime[]; // one per lecture; empty or missing = just "L1", "L2", ...
   day_times?: Record<number, LectureTime[]>; // days that run to their own clock
+  clocks?: Record<string, LectureTime[]>; // named alternative clocks, picked per class (Batch.clock)
 }
 export interface Room { id: string; name: string; capacity: number; kind: RoomKind }
 export interface Slot { day: number; lecture: number }
@@ -20,6 +21,7 @@ export interface Faculty {
 export interface Batch {
   id: string; program: string; level: "UG" | "PG"; semester: number; section: string;
   department: string; strength: number; group_of: string | null;
+  clock?: string | null; // a name from calendar.clocks; null = the institution's own times
 }
 export interface Course {
   code: string; name: string; department: string; credits: number; category: string; room_kind: RoomKind;

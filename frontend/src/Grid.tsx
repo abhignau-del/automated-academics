@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { timeLabel, timesOn, range } from "./times";
+import { clockOfBatch, clockOfOffering, range, sideTimes, timeLabel } from "./times";
 import { assignLanes, blockFits, courseColour, sessionKey } from "./timetable";
 import type { Institution, Placement, ViewKind } from "./types";
 
@@ -12,6 +12,7 @@ interface Props {
   conflictOfferings: Set<string>;
   pinned: Set<string>; // sessions fixed in place; they can't be dragged
   readOnly?: boolean; // a viewer: nothing can be dragged
+  viewId?: string; // which class / teacher / room is shown (a class's clock labels the side)
   selected: string | null;
   onSelect: (key: string | null) => void;
   onMove: (key: string, day: number, start: number) => void;
@@ -19,7 +20,7 @@ interface Props {
 
 interface Hover { day: number; start: number; length: number; ok: boolean }
 
-export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = false, selected, onSelect, onMove }: Props) {
+export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = false, viewId, selected, onSelect, onMove }: Props) {
   const cal = inst.calendar;
   const drag = useRef<{ key: string; grab: number; length: number } | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
@@ -31,6 +32,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
     rooms: new Map(inst.rooms.map((r) => [r.id, r])),
   }), [inst]);
   const lanes = useMemo(() => assignLanes(items), [items]);
+  const side = sideTimes(cal, kind === "batch" ? clockOfBatch(inst, viewId) : null); // down the left of the grid
 
   const lectureAt = (e: React.DragEvent<HTMLElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -79,7 +81,7 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
         {Array.from({ length: cal.lectures_per_day }, (_, p) => (
           <div key={p} className={"grid-time" + (cal.break_after.includes(p) ? " break" : "")} style={{ height: ROW_H }}>
             <b>L{p + 1}</b>
-            {timesOn(cal, 0).length > 0 && <small>{range(cal.times?.[p] ?? timesOn(cal, 0)[p])}</small>}
+            {side.length > 0 && side[p] && <small>{range(side[p])}</small>}
           </div>
         ))}
       </div>
@@ -137,7 +139,13 @@ export function Grid({ inst, items, kind, conflictOfferings, pinned, readOnly = 
                 onDragEnd={() => { drag.current = null; setHover(null); }}
               >
                 <strong>{locked && <span aria-label="locked" role="img">🔒 </span>}{info.code}</strong>
-                {cal.day_times?.[day] && <small className="cardtime">{timeLabel(cal, day, p.start, p.length)}</small>}
+                {(() => {
+                  // a session that runs to another clock than the side column (a day of its own, another class) says when
+                  const own = timeLabel(cal, day, p.start, p.length, clockOfOffering(inst, lookup.offerings.get(p.offering_id)!));
+                  const sideLabel = side[p.start] && side[p.start + p.length - 1]
+                    ? `${range(side[p.start]).split("\u2013")[0]}\u2013${range(side[p.start + p.length - 1]).split("\u2013")[1]}` : null;
+                  return own && own !== sideLabel ? <small className="cardtime">{own}</small> : null;
+                })()}
                 <span>{info.name}</span>
                 {info.lines.map((l, i) => <em key={i}>{l}</em>)}
               </div>

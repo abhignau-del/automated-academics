@@ -5,6 +5,25 @@ import type { Calendar, LectureTime } from "./types";
 interface Props {
   calendar: Calendar;
   onChange: (calendar: Calendar) => void;
+  clockUse: Record<string, number>; // how many classes keep each clock
+  onRenameClock: (from: string, to: string) => void;
+  onRemoveClock: (name: string) => void;
+}
+
+/** A clock's name, edited in place and applied when you leave the box (so every keystroke isn't a rename). */
+function NameField({ name, taken, onCommit }: { name: string; taken: string[]; onCommit: (to: string) => void }) {
+  const [text, setText] = useState(name);
+  const clash = text.trim() !== name && taken.includes(text.trim());
+  const commit = () => {
+    const t = text.trim();
+    if (!t || clash) { setText(name); return; }
+    if (t !== name) onCommit(t);
+  };
+  return (
+    <input className={"clockname" + (clash ? " bad" : "")} value={text} aria-label={`name of clock ${name}`}
+      onChange={(e) => setText(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setText(name); (e.target as HTMLInputElement).blur(); } }} />
+  );
 }
 
 function Rows({ rows, label, onChange }: { rows: LectureTime[]; label: string; onChange: (rows: LectureTime[]) => void }) {
@@ -31,13 +50,16 @@ function Rows({ rows, label, onChange }: { rows: LectureTime[]; label: string; o
 }
 
 /** Settings → the clock time of each lecture, so the timetable can say "9:30–10:30" instead of "L1". Optional. */
-export function TimesEditor({ calendar, onChange }: Props) {
+export function TimesEditor({ calendar, onChange, clockUse, onRenameClock, onRemoveClock }: Props) {
   const times = calendar.times ?? [];
   const dayTimes = calendar.day_times ?? {};
   const n = calendar.lectures_per_day;
   const valid = Number.isFinite(n) && n >= 1;
   const [spec, setSpec] = useState({ start: "09:00", minutes: 60, gap: 0, breakMinutes: 30 });
   const [open, setOpen] = useState(false);
+  const [newClock, setNewClock] = useState("");
+  const clocks = calendar.clocks ?? {};
+  const clockNames = Object.keys(clocks);
 
   const fill = () =>
     onChange({
@@ -102,8 +124,37 @@ export function TimesEditor({ calendar, onChange }: Props) {
             </div>
           )}
 
+          {times.length > 0 && (
+            <div className="clocks">
+              <b>Classes that keep other hours</b>
+              <p className="muted small">
+                For classes that run to a different clock (50-minute and 40-minute lectures, a morning and an evening batch). Name a set
+                of times, then choose it for those classes in the Classes tab. Lecture numbers stay the same, so a teacher is still kept
+                to one place per lecture.
+              </p>
+              {clockNames.map((name) => (
+                <details key={name} open>
+                  <summary>
+                    <NameField name={name} taken={clockNames} onCommit={(to) => onRenameClock(name, to)} />
+                    {" "}<span className="muted small">{clockUse[name] ?? 0} class{(clockUse[name] ?? 0) === 1 ? "" : "es"} use it</span>
+                    {" "}<button type="button" className="linkish" onClick={() => onRemoveClock(name)}>Remove this clock</button>
+                  </summary>
+                  <Rows rows={clocks[name]} label={name} onChange={(rows) => onChange({ ...calendar, clocks: { ...clocks, [name]: rows } })} />
+                </details>
+              ))}
+              <div className="addform">
+                <input placeholder="name of a new clock, e.g. 40-minute lectures" aria-label="name of a new clock" value={newClock}
+                  onChange={(e) => setNewClock(e.target.value)} />
+                <button type="button" className="btn small" disabled={!newClock.trim() || clockNames.includes(newClock.trim())}
+                  onClick={() => { onChange({ ...calendar, clocks: { ...clocks, [newClock.trim()]: times.map((t) => ({ ...t })) } }); setNewClock(""); }}>
+                  Add a clock
+                </button>
+              </div>
+            </div>
+          )}
+
           <p>
-            <button type="button" className="btn small danger" onClick={() => { onChange({ ...calendar, times: [], day_times: {} }); setOpen(false); }}>
+            <button type="button" className="btn small danger" onClick={() => { onChange({ ...calendar, times: [], day_times: {}, clocks: {} }); setOpen(false); }}>
               Remove all lecture times
             </button>
           </p>
