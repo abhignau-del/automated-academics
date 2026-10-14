@@ -41,6 +41,7 @@ from .quality import measure, score
 from .validate import find_conflict_details
 from .views import session_views
 from .grid_io import GridError, GridOptions, import_grid
+from .scope import institution_violations, timetable_violations
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
 
 log = logging.getLogger("automated_academics")
@@ -150,6 +151,8 @@ class PasswordChange(BaseModel):
 
 class MemberRole(BaseModel):
     role: Literal["owner", "editor", "viewer"]
+    # An editor can be limited to some departments; omit (or null) for the whole institution.
+    departments: list[str] | None = Field(default=None, max_length=200)
 
 
 def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None,
@@ -217,6 +220,22 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(404, "institution not found")  # don't reveal that it exists
         if _RANK[have] < _RANK[level]:
             raise HTTPException(403, f"you have {have} access to this institution; {level} access is needed")
+
+    def scope_of(request: Request, iid: str) -> set[str] | None:
+        """The departments the signed-in person is limited to on this institution; None = the whole of it."""
+        user = me(request)
+        if user.is_admin or not auth_on:
+            return None
+        if store.member_role(iid, user.id) != "editor":
+            return None
+        deps = store.member_departments(iid, user.id)
+        return set(deps) if deps else None
+
+    def whole_institution_only(request: Request, iid: str, what: str) -> None:
+        if scope_of(request, iid) is not None:
+            raise HTTPException(403, detail={
+                "message": f"You are an editor for some departments only, so you can't {what}. "
+                           "Ask an editor of the whole institution.", "scoped": True})
 
     def institution_or_404(iid: str, request: Request | None = None, level: str = "viewer") -> Institution:
         inst = store.get_institution(iid)
@@ -377,8 +396,16 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
 
         Send the version you read (the ETag of GET) as `If-Match` and the save is refused with 409 if somebody
         else saved in between, instead of silently overwriting their work."""
-        institution_or_404(iid, request, "editor")
+        before = institution_or_404(iid, request, "editor")
         inst, notes = _valid_or_422(data)
+        scope = scope_of(request, iid)
+        if scope is not None:
+            bad = institution_violations(before, inst, scope)
+            if bad:
+                raise HTTPException(403, detail={
+                    "message": "You can change only the data of " + ", ".join(sorted(scope)) + ". Not allowed: " + "; ".join(bad[:6])
+                               + (f"; and {len(bad) - 6} more" if len(bad) > 6 else "") + ".",
+                    "scoped": True, "violations": bad})
         try:
             store.update_institution(iid, inst, expected_version(request))
         except Conflict:
@@ -432,6 +459,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     @app.post("/institutions/{iid}/solve", status_code=202)
     def start_solve(iid: str, request: Request, req: SolveRequest | None = None):
         inst = institution_or_404(iid, request, "editor")
+        whole_institution_only(request, iid, "generate a timetable (it replaces everyone's)")
         limit = (req or SolveRequest()).time_limit_s
         jid = store.create_job(iid, limit)
         pool.submit(run_job, jid, inst, limit)
@@ -442,6 +470,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         """Store an existing timetable (as read by import-grid) as this institution's first finished timetable,
         so it can be looked at, compared with and replaced by a generated one. Clashes are reported, not refused."""
         inst = institution_or_404(iid, request, "editor")
+        whole_institution_only(request, iid, "replace the institution's timetable")
         offerings = {o.id: o for o in inst.offerings}
         rooms = {r.id for r in inst.rooms}
         for pl in body.placements:
@@ -487,6 +516,13 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if store.get_timetable(jid) is None:
             raise HTTPException(409, f"job is {job['status']}; only finished jobs can be edited")
         inst = institution_or_404(job["institution_id"])
+        scope = scope_of(request, job["institution_id"])
+        if scope is not None:
+            bad = timetable_violations(inst, store.get_timetable(jid), tt, scope)
+            if bad:
+                raise HTTPException(403, detail={
+                    "message": "You can move only sessions of " + ", ".join(sorted(scope)) + ". Not allowed: " + "; ".join(bad[:6]) + ".",
+                    "scoped": True, "violations": bad})
         store.save_timetable(jid, tt.model_copy(update={"status": "MANUAL"}))
         return _report(inst, tt)
 
@@ -687,7 +723,10 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         owners = [m for m in store.list_members(iid) if m["role"] == "owner"]
         if body.role != "owner" and len(owners) == 1 and owners[0]["id"] == target["id"]:
             raise HTTPException(409, "an institution needs at least one owner")
-        store.set_member(iid, target["id"], body.role)
+        departments = [d.strip() for d in (body.departments or []) if d.strip()] or None
+        if departments and body.role != "editor":
+            raise HTTPException(422, "only an editor can be limited to some departments")
+        store.set_member(iid, target["id"], body.role, departments)
         return store.list_members(iid)
 
     @app.delete("/institutions/{iid}/members/{username}")

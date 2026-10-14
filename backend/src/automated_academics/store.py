@@ -72,6 +72,10 @@ class Store:
             # counts every change (including ones that leave updated_at alone), so two editors can't overwrite each other
             if "version" not in cols:
                 c.execute("ALTER TABLE institutions ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+            # an editor limited to some departments (JSON list); NULL means the whole institution
+            member_cols = {r["name"] for r in c.execute("PRAGMA table_info(members)")}
+            if "departments" not in member_cols:
+                c.execute("ALTER TABLE members ADD COLUMN departments TEXT")
         with self._conn() as c:
             c.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer, which matters with several users
 
@@ -146,10 +150,14 @@ class Store:
                 rows = c.execute("SELECT id, name, created_at, updated_at FROM institutions "
                                  "ORDER BY created_at DESC, rowid DESC").fetchall()
             else:
-                rows = c.execute("SELECT i.id, i.name, i.created_at, i.updated_at, m.role FROM institutions i "
+                rows = c.execute("SELECT i.id, i.name, i.created_at, i.updated_at, m.role, m.departments FROM institutions i "
                                  "JOIN members m ON m.institution_id = i.id WHERE m.user_id=? "
                                  "ORDER BY i.created_at DESC, i.rowid DESC", (user_id,)).fetchall()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        for r in out:
+            if "departments" in r:
+                r["departments"] = json.loads(r["departments"]) if r["departments"] else None
+        return out
 
     # ---- users, sign-in sessions and who may see which institution ----
     def count_users(self) -> int:
@@ -220,10 +228,18 @@ class Store:
             row = c.execute("SELECT role FROM members WHERE institution_id=? AND user_id=?", (iid, uid)).fetchone()
         return row["role"] if row else None
 
-    def set_member(self, iid: str, uid: str, role: str) -> None:
+    def member_departments(self, iid: str, uid: str) -> list[str] | None:
+        """The departments an editor is limited to, or None for the whole institution."""
         with self._conn() as c:
-            c.execute("INSERT INTO members (institution_id, user_id, role) VALUES (?,?,?) "
-                      "ON CONFLICT(institution_id, user_id) DO UPDATE SET role=excluded.role", (iid, uid, role))
+            row = c.execute("SELECT departments FROM members WHERE institution_id=? AND user_id=?", (iid, uid)).fetchone()
+        return json.loads(row["departments"]) if row and row["departments"] else None
+
+    def set_member(self, iid: str, uid: str, role: str, departments: list[str] | None = None) -> None:
+        stored = json.dumps(sorted(set(departments))) if departments else None
+        with self._conn() as c:
+            c.execute("INSERT INTO members (institution_id, user_id, role, departments) VALUES (?,?,?,?) "
+                      "ON CONFLICT(institution_id, user_id) DO UPDATE SET role=excluded.role, departments=excluded.departments",
+                      (iid, uid, role, stored))
 
     def remove_member(self, iid: str, uid: str) -> None:
         with self._conn() as c:
@@ -231,9 +247,12 @@ class Store:
 
     def list_members(self, iid: str) -> list[dict[str, Any]]:
         with self._conn() as c:
-            rows = c.execute("SELECT u.id, u.username, u.display_name, m.role FROM members m JOIN users u ON u.id = m.user_id "
-                             "WHERE m.institution_id=? ORDER BY m.role, u.username", (iid,)).fetchall()
-        return [dict(r) for r in rows]
+            rows = c.execute("SELECT u.id, u.username, u.display_name, m.role, m.departments FROM members m "
+                             "JOIN users u ON u.id = m.user_id WHERE m.institution_id=? ORDER BY m.role, u.username", (iid,)).fetchall()
+        out = [dict(r) for r in rows]
+        for r in out:
+            r["departments"] = json.loads(r["departments"]) if r["departments"] else None
+        return out
 
     # ---- jobs ----
     def create_job(self, institution_id: str, time_limit_s: float) -> str:
