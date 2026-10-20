@@ -1,5 +1,5 @@
 import type {
-  AuthStatus, AuthUser, CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Placement, Quality, Timetable, UploadIssue,
+  AuthStatus, AuthUser, Calendar, CheckResult, ConflictReport, DataIssue, Institution, InstitutionSummary, Job, Placement, Quality, Timetable, UploadIssue,
   Member, UserRow, ViewKind,
 } from "./types";
 
@@ -189,3 +189,39 @@ export function importGrid(file: File, options: GridOptions) {
 /** Keep an existing timetable (from `importGrid`) as the institution's first finished timetable. */
 export const keepImportedTimetable = (iid: string, placements: Placement[]) =>
   request<{ job_id: string; report: ConflictReport }>(`/institutions/${iid}/timetable/imported`, json("POST", { placements }));
+
+// ---- publishing a timetable by link ----
+
+export interface Publication {
+  id: string; job_id: string; label: string; kinds: ("batch" | "faculty" | "room")[]; token: string;
+  path: string; // "/#/p/<token>": append to the site's address
+  created_at: string; expires_at: string | null; expired: boolean;
+}
+export const listPublications = (iid: string) => request<Publication[]>(`/institutions/${iid}/publications`);
+export const publish = (iid: string, body: { job_id?: string; label?: string; kinds: Publication["kinds"]; expires_days?: number | null }) =>
+  request<Publication>(`/institutions/${iid}/publications`, json("POST", body));
+export const changePublication = (iid: string, pid: string, body: { job_id?: string; label?: string; kinds?: Publication["kinds"]; expires_days?: number | null }) =>
+  request<Publication>(`/institutions/${iid}/publications/${pid}`, json("PATCH", body));
+export const revokePublication = (iid: string, pid: string) => request<void>(`/institutions/${iid}/publications/${pid}`, { method: "DELETE" });
+
+// what a published link shows (no sign-in involved)
+export interface PublicMeta {
+  institution: string; label: string; kinds: Publication["kinds"]; published_at: string; expires_at: string | null;
+  calendar: Calendar;
+  entities: Partial<Record<Publication["kinds"][number], { id: string; label: string; clock?: string | null }[]>>;
+  everything: boolean;
+}
+export interface PublicSession {
+  offering_id: string; session_index: number; course_code: string; course_name: string; faculty_id: string; faculty_name: string;
+  batch_ids: string[]; room_id: string; room_name: string; day: number; day_name: string; start: number; length: number; time: string | null;
+}
+export const publicMeta = (token: string) => request<PublicMeta>(`/public/${token}`);
+export const publicView = (token: string, kind: string, id: string) =>
+  request<{ kind: string; id: string; sessions: PublicSession[] }>(`/public/${token}/views/${kind}/${encodeURIComponent(id)}`);
+export function publicPdfUrl(token: string, kind?: string, id?: string): string {
+  const q = new URLSearchParams();
+  if (kind) q.set("kind", kind);
+  if (kind && id) q.set("id", id);
+  return `${API_BASE}/public/${token}/export.pdf${q.toString() ? "?" + q : ""}`;
+}
+export const publicXlsxUrl = (token: string) => `${API_BASE}/public/${token}/export.xlsx`;

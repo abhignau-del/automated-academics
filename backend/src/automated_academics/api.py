@@ -17,6 +17,7 @@ import re
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -39,7 +40,7 @@ from .store import Conflict, Store
 from .synthetic import sample_institution
 from .quality import measure, score
 from .validate import find_conflict_details
-from .views import session_views
+from .views import entities, session_views
 from .grid_io import GridError, GridOptions, import_grid
 from .scope import institution_violations, timetable_violations
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
@@ -122,6 +123,10 @@ def _report(inst: Institution, tt: Timetable) -> ConflictReport:
 
 _RANK = {"viewer": 1, "editor": 2, "owner": 3}
 _PUBLIC = {"/health", "/auth/status", "/auth/login", "/auth/setup"}
+_PUBLIC_PREFIX = "/public/"  # published, link-only timetables: no account needed
+# what every answer about a published timetable says: don't keep it, don't index it, don't pass the address on
+_PUBLIC_HEADERS = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
+_ALL_KINDS = ("batch", "faculty", "room")
 SESSION_COOKIE = "aa_session"
 
 
@@ -149,6 +154,20 @@ class PasswordChange(BaseModel):
     new: str
 
 
+class PublishIn(BaseModel):
+    job_id: str | None = None  # default: the institution's latest finished timetable
+    label: str = Field(default="", max_length=80)
+    kinds: list[Literal["batch", "faculty", "room"]] = Field(default=["batch"], min_length=1, max_length=3)
+    expires_days: int | None = Field(default=None, ge=1, le=3650)  # None: the link never expires
+
+
+class PublishPatch(BaseModel):
+    job_id: str | None = None
+    label: str | None = Field(default=None, max_length=80)
+    kinds: list[Literal["batch", "faculty", "room"]] | None = Field(default=None, min_length=1, max_length=3)
+    expires_days: int | None = Field(default=None, ge=1, le=3650)  # send null to make it never expire
+
+
 class MemberRole(BaseModel):
     role: Literal["owner", "editor", "viewer"]
     # An editor can be limited to some departments; omit (or null) for the whole institution.
@@ -163,6 +182,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     auth_on = auth if auth is not None else os.environ.get("AA_AUTH", "") not in ("", "0")
     secure_cookie = os.environ.get("AA_COOKIE_SECURE", "") not in ("", "0")
     throttle = authlib.LoginThrottle()
+    bad_links = authlib.LoginThrottle(limit=30, lock_s=60.0)  # slows down anyone guessing published-link addresses
 
     def session_user(request: Request) -> User | None:
         token = request.cookies.get(SESSION_COOKIE)
@@ -182,7 +202,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             return
         user = session_user(request)
         request.state.user = user
-        if user is None and request.url.path not in _PUBLIC:
+        if user is None and request.url.path not in _PUBLIC and not request.url.path.startswith(_PUBLIC_PREFIX):
             raise HTTPException(401, "please sign in")
 
     pdf_font = pdf_font or os.environ.get("AA_PDF_FONT") or None
@@ -706,6 +726,142 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if uid == admin.id or last_admin(uid):
             raise HTTPException(409, "you can't delete the last administrator, or yourself")
         store.delete_user(uid)
+
+    # ---------------- publishing a timetable by link ----------------
+    def link_view(p: dict, request: Request) -> dict:
+        return {"id": p["id"], "job_id": p["job_id"], "label": p["label"], "kinds": p["kinds"], "token": p["token"],
+                "path": f"/#/p/{p['token']}", "created_at": p["created_at"], "expires_at": p["expires_at"],
+                "expired": _expired(p)}
+
+    def _expired(p: dict) -> bool:
+        return bool(p["expires_at"]) and p["expires_at"] < datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+    def finished_job_of(iid: str, job_id: str) -> dict:
+        job = store.get_job(job_id)
+        if job is None or job["institution_id"] != iid:
+            raise HTTPException(422, "that timetable doesn't belong to this institution")
+        if store.get_timetable(job_id) is None:
+            raise HTTPException(409, "that timetable isn't finished yet")
+        return job
+
+    def publisher(request: Request, iid: str) -> None:
+        if not auth_on:
+            raise HTTPException(409, "publishing needs shared mode (sign-in), because the link has to be reachable by other people")
+        institution_or_404(iid, request, "editor")
+        whole_institution_only(request, iid, "publish the timetable (it is the whole institution's)")
+
+    @app.get("/institutions/{iid}/publications")
+    def list_links(iid: str, request: Request):
+        institution_or_404(iid, request, "editor")
+        return [link_view(p, request) for p in store.list_publications(iid)]
+
+    @app.post("/institutions/{iid}/publications", status_code=201)
+    def publish(iid: str, body: PublishIn, request: Request):
+        """Make a finished timetable readable by anyone with a link. They need no account; the link can be revoked."""
+        publisher(request, iid)
+        job_id = body.job_id
+        if job_id is None:
+            latest = store.latest_done_job(iid)
+            if latest is None:
+                raise HTTPException(409, "generate a timetable first")
+            job_id = latest["id"]
+        finished_job_of(iid, job_id)
+        kinds = [k for k in _ALL_KINDS if k in body.kinds]
+        row = store.add_publication(iid, job_id, authlib.new_token(), body.label.strip(), kinds, me(request).id, body.expires_days)
+        return link_view(row, request)
+
+    @app.patch("/institutions/{iid}/publications/{pid}")
+    def change_link(iid: str, pid: str, body: PublishPatch, request: Request):
+        publisher(request, iid)
+        if store.get_publication(pid, iid) is None:
+            raise HTTPException(404, "no such link")
+        fields: dict[str, Any] = {}
+        if body.job_id is not None:
+            finished_job_of(iid, body.job_id)
+            fields["job_id"] = body.job_id
+        if body.label is not None:
+            fields["label"] = body.label.strip()
+        if body.kinds is not None:
+            fields["kinds"] = [k for k in _ALL_KINDS if k in body.kinds]
+        if "expires_days" in body.model_fields_set:
+            fields["expires_at"] = (datetime.now(timezone.utc) + timedelta(days=body.expires_days)).isoformat(timespec="microseconds") \
+                if body.expires_days else None
+        store.update_publication(pid, iid, **fields)
+        return link_view(store.get_publication(pid, iid), request)
+
+    @app.delete("/institutions/{iid}/publications/{pid}", status_code=204)
+    def revoke(iid: str, pid: str, request: Request):
+        publisher(request, iid)
+        if not store.delete_publication(pid, iid):
+            raise HTTPException(404, "no such link")
+
+    # what anyone holding a link can see: only the timetable it was made for, only the views that were chosen
+    def open_link(token: str, request: Request, response: Response) -> tuple[dict, Institution, Timetable]:
+        ip = request.client.host if request.client else ""
+        response.headers.update(_PUBLIC_HEADERS)
+        wait = bad_links.wait_s(ip)
+        if wait > 0:
+            raise HTTPException(429, f"too many wrong addresses; try again in {int(wait) + 1} seconds")
+        row = store.get_publication_by_token(token)
+        if row is None:
+            bad_links.failed(ip)
+            raise HTTPException(404, "this link is not valid (it may have been withdrawn)")
+        if _expired(row):
+            raise HTTPException(410, "this link has expired")
+        inst, tt = store.get_institution(row["institution_id"]), store.get_timetable(row["job_id"])
+        if inst is None or tt is None:
+            raise HTTPException(404, "this timetable is no longer available")
+        return row, inst, tt
+
+    @app.get("/public/{token}")
+    def public_meta(token: str, request: Request, response: Response):
+        row, inst, _tt = open_link(token, request, response)
+        return {
+            "institution": inst.name, "label": row["label"], "kinds": row["kinds"], "published_at": row["created_at"],
+            "expires_at": row["expires_at"], "calendar": inst.calendar.model_dump(mode="json"),
+            "entities": {k: [{"id": i, "label": lab, **({"clock": inst.clock_of_batch(i)} if k == "batch" else {})}
+                             for i, lab in entities(inst, k)] for k in row["kinds"]},
+            "everything": sorted(row["kinds"]) == sorted(_ALL_KINDS),
+        }
+
+    @app.get("/public/{token}/views/{kind}/{ident}")
+    def public_view(token: str, kind: Literal["batch", "faculty", "room"], ident: str, request: Request, response: Response):
+        row, inst, tt = open_link(token, request, response)
+        if kind not in row["kinds"]:
+            raise HTTPException(404, f"{kind} timetables are not part of this link")
+        try:
+            sessions = session_views(inst, tt, kind, ident)
+        except LookupError:
+            raise HTTPException(404, f"{kind} not found") from None
+        return {"kind": kind, "id": ident, "sessions": sessions}
+
+    @app.get("/public/{token}/export.pdf")
+    def public_pdf(token: str, request: Request, kind: Literal["batch", "faculty", "room"] | None = None, id: str | None = None):
+        response = Response()
+        row, inst, tt = open_link(token, request, response)
+        if id is not None and kind is None:
+            raise HTTPException(422, "`id` requires `kind`")
+        if (kind is None and sorted(row["kinds"]) != sorted(_ALL_KINDS)) or (kind is not None and kind not in row["kinds"]):
+            raise HTTPException(404, "that is not part of this link")
+        buf = io.BytesIO()
+        try:
+            build_pdf(inst, tt, buf, kind, id, font_path=pdf_font)
+        except LookupError:
+            raise HTTPException(404, f"{kind} not found") from None
+        buf.seek(0)
+        name = "timetable" + (f"-{kind}" if kind else "") + (f"-{id}" if id else "") + ".pdf"
+        return StreamingResponse(buf, media_type="application/pdf", headers={**_attachment(name), **_PUBLIC_HEADERS})
+
+    @app.get("/public/{token}/export.xlsx")
+    def public_xlsx(token: str, request: Request):
+        response = Response()
+        row, inst, tt = open_link(token, request, response)
+        if sorted(row["kinds"]) != sorted(_ALL_KINDS):
+            raise HTTPException(404, "the workbook includes every view, which this link does not")
+        buf = io.BytesIO()
+        build_xlsx(inst, tt, buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type=XLSX, headers={**_attachment("timetable.xlsx"), **_PUBLIC_HEADERS})
 
     # ---------------- sharing an institution ----------------
     @app.get("/institutions/{iid}/members")

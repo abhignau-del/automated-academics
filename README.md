@@ -129,7 +129,15 @@ docker compose up -d        # then open http://localhost:8000
    sessions on the timetable. Other departments' rows are shown but locked; rooms and the institution's settings (days,
    lecture times, goal weights), generating a timetable and replacing it are left to editors of the whole institution, and a
    joint class between departments needs a person with all of them. The server refuses anything else, whatever the screen shows.
-5. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
+5. **Publishing by link.** Once a timetable is generated, an editor of the whole institution can choose **Publish…**: it makes a long,
+   unguessable link that anyone can open with no account, read-only. Choose which views it offers (class timetables for students
+   by default; teachers and rooms are separate ticks), optionally an expiry, and send the link. The page works on a phone (a
+   week grid or a day-by-day list), lets people download a PDF of their class, and opens straight to a class if the address is
+   bookmarked. A link keeps showing the timetable as it was when published, including edits saved to it later, until you choose
+   *Show the current timetable*; *Withdraw* ends it at once. Publishing needs shared mode (sign-in), since the link has to be
+   reachable by others, and the link itself is the secret: anyone who is given it can open it, and class timetables show each
+   subject's teacher and room.
+6. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
    an offer to load the other version.
 
 Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
@@ -428,8 +436,9 @@ font such as Noto Sans.
 - [x] Import a workload list; lock sessions in place; plain-language reasons when no timetable exists
 - [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
 - [x] Editors limited to some departments
-- [ ] Read-only publishing links, single sign-on, audit log
-- [x] Browser tests in CI (eight journeys driving the real app)
+- [x] Read-only publishing links
+- [ ] Single sign-on, audit log, password reset by email
+- [x] Browser tests in CI (nine journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
@@ -443,7 +452,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (eight so far, about 120 checks). Each one starts its own copy of the app with an empty data folder.
+so on (nine so far, about 140 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

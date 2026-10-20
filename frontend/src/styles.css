@@ -229,3 +229,16 @@ tr.locked { opacity: .55; } tr.locked td { background: repeating-linear-gradient
 fieldset.settings { border: 0; padding: 0; margin: 0; min-width: 0; }
 .deptscope { margin-top: 4px; font-size: 12px; } .deptscope .check { display: flex; gap: 6px; }
 .deptpick { margin: 8px 0; border: 1px solid var(--line); border-radius: 6px; } .deptpick .check { display: inline-flex; gap: 4px; margin-right: 12px; }
+
+.public header { display: flex; align-items: baseline; gap: 12px; padding: 12px 20px; background: var(--accent); color: var(--accent-text); flex-wrap: wrap; }
+.public header h1 { font-size: 18px; } .public header .muted { color: inherit; opacity: .8; }
+.public main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+.public .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.public select { padding: 6px 8px; max-width: 100%; }
+.downloads { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.agenda section { margin-bottom: 16px; } .agenda h3 { margin: 0 0 6px; }
+.agenda ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.agenda li { border: 1px solid var(--line); border-left: 6px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--panel); }
+.publinks .linkrow { display: flex; gap: 6px; margin-top: 4px; } .publinks .linkrow input { flex: 1; min-width: 200px; padding: 4px 6px; font-size: 12px; }
+.label.inline, label.inline { display: inline-flex; align-items: center; gap: 6px; }
+.check.block { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; }

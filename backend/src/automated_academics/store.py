@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS members (
     institution_id TEXT NOT NULL REFERENCES institutions(id), user_id TEXT NOT NULL REFERENCES users(id),
     role TEXT NOT NULL, PRIMARY KEY (institution_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS publications (
+    id TEXT PRIMARY KEY, institution_id TEXT NOT NULL REFERENCES institutions(id), job_id TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE, label TEXT NOT NULL, kinds TEXT NOT NULL,
+    created_by TEXT, created_at TEXT NOT NULL, expires_at TEXT
+);
 """
 
 
@@ -136,6 +141,7 @@ class Store:
         with self._conn() as c:
             c.execute("DELETE FROM jobs WHERE institution_id=?", (iid,))
             c.execute("DELETE FROM members WHERE institution_id=?", (iid,))
+            c.execute("DELETE FROM publications WHERE institution_id=?", (iid,))
             return c.execute("DELETE FROM institutions WHERE id=?", (iid,)).rowcount > 0
 
     def institution_updated_at(self, iid: str) -> str | None:
@@ -222,6 +228,55 @@ class Store:
     def delete_user_sessions(self, uid: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+
+    # ---- published (read-only, link-only) timetables ----
+    @staticmethod
+    def _publication(row: Any) -> dict[str, Any]:
+        d = dict(row)
+        d["kinds"] = json.loads(d["kinds"])
+        return d
+
+    def add_publication(self, iid: str, job_id: str, token: str, label: str, kinds: list[str], created_by: str | None,
+                        expires_days: float | None) -> dict[str, Any]:
+        pid, now = _new_id(), datetime.now(timezone.utc)
+        expires = (now + timedelta(days=expires_days)).isoformat(timespec="microseconds") if expires_days else None
+        with self._conn() as c:
+            c.execute("INSERT INTO publications (id, institution_id, job_id, token, label, kinds, created_by, created_at, expires_at) "
+                      "VALUES (?,?,?,?,?,?,?,?,?)",
+                      (pid, iid, job_id, token, label, json.dumps(kinds), created_by, now.isoformat(timespec="microseconds"), expires))
+            row = c.execute("SELECT * FROM publications WHERE id=?", (pid,)).fetchone()
+        return self._publication(row)
+
+    def get_publication_by_token(self, token: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM publications WHERE token=?", (token,)).fetchone()
+        return self._publication(row) if row else None
+
+    def list_publications(self, iid: str) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM publications WHERE institution_id=? ORDER BY created_at DESC, rowid DESC", (iid,)).fetchall()
+        return [self._publication(r) for r in rows]
+
+    def update_publication(self, pid: str, iid: str, **fields: Any) -> bool:
+        allowed = {"job_id", "label", "kinds", "expires_at"}
+        assert set(fields) <= allowed, fields
+        if "kinds" in fields:
+            fields["kinds"] = json.dumps(fields["kinds"])
+        if not fields:
+            return self.get_publication(pid, iid) is not None
+        sets = ", ".join(k + "=?" for k in fields)
+        with self._conn() as c:
+            return c.execute("UPDATE publications SET " + sets + " WHERE id=? AND institution_id=?",
+                             (*fields.values(), pid, iid)).rowcount > 0
+
+    def get_publication(self, pid: str, iid: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM publications WHERE id=? AND institution_id=?", (pid, iid)).fetchone()
+        return self._publication(row) if row else None
+
+    def delete_publication(self, pid: str, iid: str) -> bool:
+        with self._conn() as c:
+            return c.execute("DELETE FROM publications WHERE id=? AND institution_id=?", (pid, iid)).rowcount > 0
 
     def member_role(self, iid: str, uid: str) -> str | None:
         with self._conn() as c:

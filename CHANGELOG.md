@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Read-only publish links (shared mode).** An editor of the whole institution can **Publish…** a finished timetable as a link anyone
+  can open with no account. Choose the views to offer (classes, teachers, rooms), an optional expiry and a name; copy the link,
+  point it at a newer timetable, or withdraw it at any time. The public page is read-only, shows the class's own clock, works on
+  a phone (week grid or day list), downloads PDFs (and an Excel workbook when every view is offered) and opens straight to a
+  bookmarked class. Links are 256-bit random, never listed, not cached or indexed, send no referrer, and guessing addresses is
+  slowed down; the rest of the app still needs a sign-in. A new `publications` table is added to databases in place.
+
 ## v0.9.0 (2026-10-20)
 
 Clearer clash messages, sideways grids in the timetable import, and browser tests in CI. Existing data, workbooks and databases keep working.
