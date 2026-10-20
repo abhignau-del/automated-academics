@@ -47,3 +47,35 @@ jobs:
           curl -fs http://127.0.0.1:8000/auth/status | tee /dev/stderr | grep -q '"setup_needed":true'
           curl -fs http://127.0.0.1:8000/ | grep -q 'id="root"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/institutions)" = 401
+
+  e2e:
+    # Real-browser journeys: the built screen and the engine on one address, driven the way a person would.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - run: pip install -e "backend[dev]"
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build:app
+        working-directory: frontend
+      - run: npm ci
+        working-directory: e2e
+      - run: node run.mjs
+        working-directory: e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failures
+          path: e2e/out
+          if-no-files-found: ignore

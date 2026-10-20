@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Browser tests in CI.** `e2e/` now holds eight journeys that drive the real app in a real browser (generate and export, locking
+  and failure reasons, joint classes, lecture times, class clocks, grid import ordinary and sideways, shared mode, department
+  scoping; about 120 checks), each on its own copy of the app. A new `e2e` CI job runs them on every push and uploads a screenshot
+  when one fails. Locally: `node run.mjs` in `e2e/`.
 - **Sideways grids in the timetable import.** Grids drawn with the days down the first column and the lectures (times or period
   numbers, with a LUNCH/BREAK column if there is one) across the top are read the same way as ordinary ones: same classes, times,
   breaks and sessions. The heading may sit in the top-left corner or above the grid, and days may be spelled out ("Monday").

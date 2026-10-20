@@ -16,3 +16,4 @@ logs/
 
 # Real institutional data must never be committed
 private-data/
+e2e/out/

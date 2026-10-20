@@ -1,0 +1,8 @@
+{
+  "name": "automated-academics-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser journeys that drive the real app (built screen + engine) the way a person would",
+  "scripts": { "test": "node run.mjs" },
+  "dependencies": { "playwright-core": "^1.55.0" }
+}

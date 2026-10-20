@@ -429,7 +429,7 @@ font such as Noto Sans.
 - [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
 - [x] Editors limited to some departments
 - [ ] Read-only publishing links, single sign-on, audit log
-- [ ] Browser tests in CI (today the end-to-end journeys are run by hand)
+- [x] Browser tests in CI (eight journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
@@ -439,6 +439,20 @@ font such as Noto Sans.
 
 This repository contains only fictional data. Never commit real student or staff data.
 `private-data/` is git-ignored for local validation.
+
+## Browser tests
+
+`e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
+so on (eight so far, about 120 checks). Each one starts its own copy of the app with an empty data folder.
+
+```bash
+cd frontend && npm run build:app            # the screen they drive
+cd ../e2e && npm ci
+E2E_PYTHON=../backend/.venv/Scripts/python.exe node run.mjs      # all of them; or: node run.mjs times clocks
+```
+
+They need Chrome or Edge installed (set `E2E_EXECUTABLE` to use another). CI runs them on every push; a failure uploads a
+screenshot of what the browser saw.
 
 ## Contributing
 
