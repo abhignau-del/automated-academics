@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 (2026-10-20)
+
+Clearer clash messages, sideways grids in the timetable import, and browser tests in CI. Existing data, workbooks and databases keep working.
 
 - **Browser tests in CI.** `e2e/` now holds eight journeys that drive the real app in a real browser (generate and export, locking
   and failure reasons, joint classes, lecture times, class clocks, grid import ordinary and sideways, shared mode, department
