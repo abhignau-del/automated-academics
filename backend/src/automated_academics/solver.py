@@ -141,13 +141,14 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
         for i, length in enumerate(off.sessions):
             if not rooms:
                 raise Unsatisfiable(
-                    f"{off.id} session {i}: no {course.room_kind.value} with capacity >= {strength}")
+                    f"{course.name} for {', '.join(off.batch_ids)}: no {course.room_kind.value} seats {strength} students")
             slots = [d * n_lectures + p
                      for d in range(n_days) for p in range(n_lectures)
                      if cal.block_fits(p, length)
                      and not any((d, t) in blocked for t in range(p, p + length))]
             if not slots:
-                raise Unsatisfiable(f"{off.id} session {i}: no admissible slot")
+                raise Unsatisfiable(f"{course.name} for {', '.join(off.batch_ids)} (session {i + 1}): no slot is free for "
+                                    f"{fac.name} that fits a {length}-lecture block")
 
             pin = pins.get((off.id, i))
             usable = rooms

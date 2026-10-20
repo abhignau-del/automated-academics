@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Clearer clash messages.** Clashes and other timetable problems now read in plain words: "Prof. Rao is teaching two things at once
+  on Mon, lecture 1 (9:00–9:50): Calculus for CS-UG1 and Algebra for MG-UG1", "Room One is booked twice…", "Dr. Iyer is
+  unavailable on Tue, lecture 2…", "Room Two seats 20 but 30 students attend". Names instead of ids, lectures counted from 1, the
+  class's own times when the institution has them. A section and its lab groups hit by one mistake are still one message. Two
+  solver errors that said "session 0" now name the course and class.
+
 ## v0.8.0 (2026-10-14)
 
 Per-class lecture times and department-limited editors. Existing data, workbooks and databases keep working; databases gain a

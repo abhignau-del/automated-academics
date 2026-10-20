@@ -123,7 +123,7 @@ def test_malformed_edits_are_reported_not_crashed(client, xlsx_bytes):
     r = client.post(f"/institutions/{iid}/validate", json=bad)
     assert r.status_code == 200
     text = " ".join(r.json()["conflicts"])
-    assert "unknown offering GHOST" in text and "outside the week" in text and "unknown room ZZ" in text
+    assert "an offering that doesn't exist ('GHOST')" in text and "outside the week" in text and "a room that doesn't exist ('ZZ')" in text
 
 
 def test_upload_reports_row_level_problems(client, xlsx_bytes, tmp_path):

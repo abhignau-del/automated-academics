@@ -236,7 +236,7 @@ def test_clashes_and_idle_gaps_in_the_existing_timetable_are_counted():
     inst, report, _ = import_grid(book(build))
     assert report.existing["clashes"] >= 1
     assert report.existing["quality"]["batch_gaps"] == 1  # Class A is idle in the middle of Monday
-    assert any(c.startswith("clash F:") for c in report.existing["clash_examples"])  # the teacher is in two places
+    assert any("is teaching two things at once" in c for c in report.existing["clash_examples"])  # the teacher is in two places
 
 
 # ---------- what comes out works ----------

@@ -65,7 +65,7 @@ def test_one_double_booking_is_reported_once_not_per_class_group():
         Placement(offering_id=lectures[0].id, session_index=0, day=0, start=0, length=1, room_id="C1"),
         Placement(offering_id=lectures[1].id, session_index=0, day=0, start=0, length=1, room_id="C2"),
     ])
-    clashes = [c for c in find_conflicts(inst, tt) if c.startswith("clash B:")]
+    clashes = [c for c in find_conflicts(inst, tt) if "lectures at once" in c]
     assert len(clashes) == 1
     assert all(b in clashes[0] for b in ("CS-UG1", "CS-UG1-A", "CS-UG1-B"))
 
