@@ -374,3 +374,137 @@ def test_a_small_difference_in_gaps_is_not_a_break():
     inst, report, _ = import_grid(book(build))
     assert inst.calendar.break_after == []
     assert any("No break was found" in a for a in report.assumptions)
+
+
+# ---------- grids drawn the other way round: days down the side, lectures across the top ----------
+
+def put_sideways(ws, top, title, grid, times=TIMES, days=DAYS, corner=True, long_days=False):
+    """`grid[day][lecture]`. The class heading sits in the top-left corner, or on the row above."""
+    names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] if long_days else days
+    if corner:
+        ws.cell(row=top, column=1, value=title)
+        header = top
+    else:
+        ws.cell(row=top, column=1, value=title)
+        header = top + 1
+    for j, tm in enumerate(times):
+        ws.cell(row=header, column=2 + j, value=tm)
+    for i, row in enumerate(grid):
+        ws.cell(row=header + 1 + i, column=1, value=names[i])
+        for j, v in enumerate(row):
+            if v:
+                ws.cell(row=header + 1 + i, column=2 + j, value=v)
+    return header + 1 + len(grid)
+
+
+def transpose(rows):
+    return [list(col) for col in zip(*rows)]
+
+
+A = [["Calculus(Prof. Anil Rao)", "Algebra(Dr. Meena Iyer)", ""],
+     ["Algebra(Dr. Meena Iyer)", "Calculus(Prof. Anil Rao)", "Statistics(Prof. Ravi Nair)"],
+     ["", "Statistics(Prof. Ravi Nair)", "Calculus(Prof. Anil Rao)"],
+     ["Statistics(Prof. Ravi Nair)", "", "Algebra(Dr. Meena Iyer)"]]  # 4 lectures x 3 days
+
+
+def both_ways():
+    def standard(wb):
+        put(wb.create_sheet("S"), 1, "BSc Maths Sem 1 ( A BLOCK, ROOM NO_101)", A, days=DAYS[:3])
+
+    def sideways(wb):
+        put_sideways(wb.create_sheet("S"), 1, "BSc Maths Sem 1 ( A BLOCK, ROOM NO_101)", transpose(A), days=DAYS[:3])
+    return book(standard), book(sideways)
+
+
+def summary(inst, placements):
+    names = {c.code: c.name for c in inst.courses}
+    fac = {f.id: f.name for f in inst.faculty}
+    offs = {o.id: o for o in inst.offerings}
+    return (sorted((names[offs[p.offering_id].course_code], fac[offs[p.offering_id].faculty_id], p.day, p.start, p.length) for p in placements),
+            [b.program for b in inst.batches], inst.calendar.model_dump(), [r.name for r in inst.rooms])
+
+
+def test_the_same_timetable_drawn_sideways_imports_identically():
+    std, side = both_ways()
+    a_inst, a_rep, a_pl = import_grid(std)
+    b_inst, b_rep, b_pl = import_grid(side)
+    assert summary(b_inst, b_pl) == summary(a_inst, a_pl)
+    assert b_rep.existing["clashes"] == a_rep.existing["clashes"] == 0
+    assert b_inst.calendar.times == a_inst.calendar.times and b_inst.calendar.times  # the times across the top are read too
+
+
+def test_sideways_titles_can_sit_above_the_grid_and_days_can_be_spelt_out():
+    def build(wb):
+        put_sideways(wb.create_sheet("S"), 1, "BCom Sem 2 ( Room 12 )", transpose(A), days=DAYS[:3], corner=False, long_days=True)
+    inst, _, _ = import_grid(book(build))
+    assert [b.program for b in inst.batches] == ["BCom Sem 2"]
+    assert inst.calendar.day_names == ["Mon", "Tue", "Wed"]
+    assert [r.name for r in inst.rooms] == ["Room 12"]
+
+
+def test_period_numbers_across_the_top_mean_no_times_and_a_lunch_column_is_a_break():
+    def build(wb):
+        ws = wb.create_sheet("S")
+        # lectures 1-2, a LUNCH column, then lectures 3-4: written as period numbers, not times
+        header = ["Period 1", "Period 2", "LUNCH", "Period 3", "Period 4"]
+        ws.cell(row=1, column=1, value="BA Hist Sem 3")
+        for j, h in enumerate(header):
+            ws.cell(row=1, column=2 + j, value=h)
+        for i, day in enumerate(DAYS[:3]):
+            ws.cell(row=2 + i, column=1, value=day)
+            for j, v in enumerate([A[0][i], A[1][i], None, A[2][i], A[3][i] if len(A) > 3 else None]):
+                if v:
+                    ws.cell(row=2 + i, column=2 + j, value=v)
+    inst, report, _ = import_grid(book(build))
+    assert inst.calendar.lectures_per_day == 4
+    assert inst.calendar.break_after == [1]  # after the second lecture
+    assert inst.calendar.times == []
+    assert any("No lecture times" in a for a in report.assumptions)
+
+
+def test_sideways_blocks_stack_and_each_keeps_its_own_heading():
+    def build(wb):
+        ws = wb.create_sheet("S")
+        end = put_sideways(ws, 1, "Class A", transpose(A), days=DAYS[:3])
+        other = [[c.replace("Calculus", "Optics").replace("Algebra", "Mechanics").replace("Statistics", "Waves") for c in row] for row in A]
+        put_sideways(ws, end + 2, "Class B", transpose(other), days=DAYS[:3])
+    inst, _, _ = import_grid(book(build))
+    assert [b.program for b in inst.batches] == ["Class A", "Class B"]
+    assert len(inst.offerings) == 6  # three subjects each
+
+
+def test_a_column_of_day_names_is_needed_so_a_plain_list_is_not_a_grid():
+    def build(wb):
+        ws = wb.create_sheet("S")
+        ws.cell(row=1, column=1, value="Notes")
+        ws.cell(row=2, column=1, value="Monday")
+        ws.cell(row=3, column=1, value="Tuesday")  # only two days: not a timetable
+        ws.cell(row=1, column=2, value="9 TO 10")
+        ws.cell(row=1, column=3, value="10 TO 11")
+    import pytest
+    with pytest.raises(GridError):
+        import_grid(book(build))
+
+
+def test_a_sideways_block_with_no_heading_does_not_borrow_one_from_the_block_above():
+    def build(wb):
+        ws = wb.create_sheet("S")
+        end = put_sideways(ws, 1, "Class A", transpose(A), days=DAYS[:3])
+        other = [[c.replace("Calculus", "Optics").replace("Algebra", "Mechanics").replace("Statistics", "Waves") for c in row] for row in A]
+        put_sideways(ws, end + 1, "", transpose(other), days=DAYS[:3])  # no heading, straight after Class A's last row
+    inst, _, _ = import_grid(book(build))
+    assert [b.program for b in inst.batches] == ["Class A", "Class 2 (sheet S)"]
+
+
+def test_two_day_names_in_a_column_before_a_real_grid_are_not_a_block():
+    def build(wb):
+        ws = wb.create_sheet("S")
+        ws.cell(row=1, column=1, value="Staff meeting slots")
+        ws.cell(row=2, column=2, value="9 TO 10")
+        ws.cell(row=2, column=3, value="10 TO 11")
+        ws.cell(row=3, column=1, value="Monday")
+        ws.cell(row=4, column=1, value="Tuesday")
+        ws.cell(row=3, column=2, value="Meeting(Prof. Q Zed)")
+        put_sideways(ws, 8, "Real Class", transpose(A), days=DAYS[:3])
+    inst, _, _ = import_grid(book(build))
+    assert [b.program for b in inst.batches] == ["Real Class"]

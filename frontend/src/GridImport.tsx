@@ -72,8 +72,8 @@ export function GridImport({ onCreated, onClose }: Props) {
       <div className="modal-card wide">
         <h3>Import an existing timetable</h3>
         <p className="muted small">
-          A sheet that already holds your timetable as grids: a block for each class, the days across the top and the lectures
-          down the side, with the subject and teacher in each cell. It is read into a new institution, and your current timetable is
+          A sheet that already holds your timetable as grids: a block for each class, with the days across the top and the lectures
+          down the side (or the other way round), and the subject and teacher in each cell. It is read into a new institution, and your current timetable is
           kept so you can look at it, check it and compare it with a generated one.
         </p>
 

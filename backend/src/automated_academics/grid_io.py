@@ -143,6 +143,78 @@ def _class_and_room(title: str) -> tuple[str, str | None]:
     return name or _flat(title), room
 
 
+_TIME_RANGE = re.compile(r"\d\s*(to|-|\u2013|\u2014)\s*\d", re.I)
+
+
+def _heading_above(rows: dict[int, dict[int, str]], header_row: int, floor_row: int, last_col: int) -> str:
+    """The nearest text above a header row that reads as a class heading (not a date, a time or the word "timetable")."""
+    for tr in range(header_row - 1, max(header_row - 7, floor_row), -1):
+        for col in sorted(rows.get(tr, {})):
+            t = _flat(rows[tr][col])
+            if col > last_col or _BOILERPLATE.match(t) or _day_of(t) is not None or len(t) > 140:
+                continue
+            if re.fullmatch(r"[\d\W]+", t) or _TIME_RANGE.search(t):
+                continue
+            return rows[tr][col]
+    return ""
+
+
+def _sideways_blocks(rows: dict[int, dict[int, str]], sheet: str) -> list[_Block]:
+    """Grids drawn the other way round: the days run down the first column and the lectures across the top.
+
+    The same blocks come out as for an ordinary grid, so everything after this is identical.
+    """
+    out: list[_Block] = []
+    cols = sorted({c for line in rows.values() for c in line})
+    found: list[tuple[int, int, int, dict[int, int]]] = []  # (column, first row, last row, row -> day)
+    for c in cols:
+        run: dict[int, int] = {}
+        last_row = None
+        for r in sorted(r for r, line in rows.items() if c in line and _day_of(line[c]) is not None and len(line[c]) <= 12):
+            if last_row is not None and r != last_row + 1:
+                if len(set(run.values())) >= 3:
+                    found.append((c, min(run), max(run), dict(run)))
+                run = {}
+            run[r] = _day_of(rows[r][c])  # type: ignore[assignment]
+            last_row = r
+        if len(set(run.values())) >= 3:
+            found.append((c, min(run), max(run), dict(run)))
+    floor_row = 0
+    for c, first, last, day_rows in sorted(found, key=lambda f: f[1]):
+        header_row = next((r for r in range(first - 1, max(first - 4, 0), -1) if sum(1 for k in rows.get(r, {}) if k > c) >= 2), None)
+        if header_row is None:
+            continue
+        slot_cols = sorted(k for k in rows[header_row] if k > c)
+        labels: list[str] = []
+        breaks: list[int] = []
+        slot_of: dict[int, int] = {}
+        for k in slot_cols:
+            text = _flat(rows[header_row][k])
+            if not re.search(r"\d", text):  # "LUNCH", "BREAK", "RECESS": a break after the lecture before it
+                breaks.append(len(labels) - 1)
+                continue
+            slot_of[k] = len(labels)
+            labels.append(text if _TIME_RANGE.search(text) else f"L{len(labels) + 1}")
+        if not labels:
+            continue
+        cells: dict[tuple[int, int], str] = {}
+        for r, day in day_rows.items():
+            for k, slot in slot_of.items():
+                t = rows.get(r, {}).get(k, "")
+                if t and not _EMPTY.match(_flat(t)):
+                    cells[(day, slot)] = t
+        corner = _flat(rows[header_row].get(c, ""))
+        if corner and not _BOILERPLATE.match(corner) and _day_of(corner) is None and not _TIME_RANGE.search(corner) and len(corner) <= 140:
+            title = rows[header_row][c]
+        else:
+            title = _heading_above(rows, header_row, floor_row, max(slot_cols) + 1)
+        name, room = _class_and_room(title) if title else ("", None)
+        floor_row = last
+        out.append(_Block(sheet=sheet, title=name, room=room, days=sorted(set(day_rows.values())), time_labels=labels,
+                          cells=cells, breaks=[b for b in breaks if b >= 0]))
+    return out
+
+
 def _blocks(ws, sheet: str) -> list[_Block]:
     rows: dict[int, dict[int, str]] = {}
     for row in ws.iter_rows():
@@ -190,23 +262,12 @@ def _blocks(ws, sheet: str) -> list[_Block]:
         if not labels:
             continue
         block_end = rr
-        title = ""
-        for tr in range(r - 1, max(r - 7, floor_row), -1):
-            for col in sorted(rows.get(tr, {})):
-                t = _flat(rows[tr][col])
-                if col > last + 1 or _BOILERPLATE.match(t) or _day_of(t) is not None or len(t) > 140:
-                    continue
-                if re.fullmatch(r"[\d\W]+", t) or re.search(r"\d\s*(to|-|–)\s*\d", t, re.I):
-                    continue
-                title = rows[tr][col]
-                break
-            if title:
-                break
+        title = _heading_above(rows, r, floor_row, last + 1)
         name, room = _class_and_room(title) if title else ("", None)
         floor_row = block_end - 1
         out.append(_Block(sheet=sheet, title=name, room=room, days=sorted(set(daycols.values())),
                           time_labels=labels, cells=cells, breaks=[b for b in breaks if b >= 0]))
-    return out
+    return out + _sideways_blocks(rows, sheet)
 
 
 def _side_tables(ws) -> list[tuple[str, str]]:

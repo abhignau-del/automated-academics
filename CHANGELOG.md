@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Sideways grids in the timetable import.** Grids drawn with the days down the first column and the lectures (times or period
+  numbers, with a LUNCH/BREAK column if there is one) across the top are read the same way as ordinary ones: same classes, times,
+  breaks and sessions. The heading may sit in the top-left corner or above the grid, and days may be spelled out ("Monday").
 - **Clearer clash messages.** Clashes and other timetable problems now read in plain words: "Prof. Rao is teaching two things at once
   on Mon, lecture 1 (9:00–9:50): Calculus for CS-UG1 and Algebra for MG-UG1", "Room One is booked twice…", "Dr. Iyer is
   unavailable on Tue, lecture 2…", "Room Two seats 20 but 30 students attend". Names instead of ids, lectures counted from 1, the

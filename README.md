@@ -260,11 +260,11 @@ size is untested.
 
 ## Starting from the timetable you already have
 
-If your timetable is already a set of grids in a spreadsheet (a block for each class, the days across, the lectures down,
-a subject and teacher in each cell), use **+ New → Import an existing timetable…**. Choose the workbook and click *Read the
+If your timetable is already a set of grids in a spreadsheet (a block for each class, the days across and the lectures down, or
+the days down and the lectures across, a subject and teacher in each cell), use **+ New → Import an existing timetable…**. Choose the workbook and click *Read the
 timetable*; nothing is saved until you click *Create institution*. It:
 
-- finds each grid by its row of day names, takes the heading above it as the class (and a room written there, such as
+- finds each grid by its row (or column) of day names, takes the heading above it (or in its top-left corner) as the class (and a room written there, such as
   "Room 714"), and reads the times down the side as the lecture times, with a longer gap as the break;
 - splits each cell into subject and teacher in the usual ways (`Maths (Prof. Rao)`, two lines, `Maths - Prof. Rao`,
   `Maths Prof. Rao`), and uses a "Subject | Faculty" table beside the grid for cells that name nobody;
