@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.10.0 (2026-10-20)
+
+Read-only publish links. Existing data, workbooks and databases keep working; databases gain a `publications` table in place, and publishing needs shared mode (sign-in).
 
 - **Read-only publish links (shared mode).** An editor of the whole institution can **Publish…** a finished timetable as a link anyone
   can open with no account. Choose the views to offer (classes, teachers, rooms), an optional expiry and a name; copy the link,
