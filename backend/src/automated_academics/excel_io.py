@@ -16,7 +16,8 @@ For humans, lectures are numbered from 1 and days are written by name:
 
 `unavailable` is a hard rule; `avoid` (same format, optional column) is a preference the solver
 honours when it can. Optional Institution rows `weight_batch_gaps`, `weight_faculty_gaps`,
-`weight_peak_day_load`, `weight_repeat_course_day` and `weight_avoid_slot` set how much each
+`weight_peak_day_load`, `weight_repeat_course_day`, `weight_avoid_slot`, `weight_room_changes` and
+`weight_odd_hours` set how much each
 soft goal matters (whole numbers, 0 switches a goal off; blank uses the default).
 """
 
@@ -205,8 +206,10 @@ def _settings(ws, issues: list[ImportIssue]) -> tuple[str, Calendar, Weights]:
             raw = kv.get(f"lecture_times_{d}".lower())
             if _text(raw):
                 day_times[i] = _times(raw, f"lecture_times_{d}")
+        extra = {k: _int(kv[k], k) for k in ("early_lectures", "late_lectures") if _text(kv.get(k)) != ""}
         cal = Calendar(day_names=days, lectures_per_day=lectures, break_after=breaks, times=times, day_times=day_times,
-                       clocks=clocks)
+                       clocks=clocks, **{"early_count": extra["early_lectures"]} if "early_lectures" in extra else {},
+                       **{"late_count": extra["late_lectures"]} if "late_lectures" in extra else {})
     except (ValueError, ValidationError) as e:
         issues.append(ImportIssue("Institution", None, str(e)))
     try:
@@ -353,6 +356,8 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
         ws.append([f"lecture_times_{cal.day_names[d]}", _times_text(rows)])
     for name, rows in cal.clocks.items():
         ws.append([f"clock_{name}", _times_text(rows)])
+    ws.append(["early_lectures", cal.early_count])
+    ws.append(["late_lectures", cal.late_count])
     for m in METRICS:
         ws.append([f"weight_{m}", getattr(inst.weights, m)])
     _style(ws)

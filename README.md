@@ -39,7 +39,7 @@ Exports are print-ready (landscape A4, one page per class, faculty member and ro
 
 ## Timetable quality
 
-Beyond "no clashes", the solver minimises a weighted sum of five soft goals:
+Beyond "no clashes", the solver minimises a weighted sum of soft goals (five on by default, two you can switch on):
 
 | Goal | What it penalises | Default weight |
 |---|---|---|
@@ -48,6 +48,14 @@ Beyond "no clashes", the solver minimises a weighted sum of five soft goals:
 | `peak_day_load` | lectures on each class's busiest day (spreads the week out) | 4 |
 | `repeat_course_day` | extra sessions of one course on the same day | 5 |
 | `avoid_slot` | lectures in slots a teacher listed under `avoid` | 6 |
+| `room_changes` | classrooms a class uses for its theory lectures beyond the first, so a class tends to stay in one room (labs and halls don't count) | 0 (off) |
+| `odd_hours` | class lectures in the first or last slots of the day | 0 (off) |
+
+The last two are off until you give them a weight (**Data → Settings → What makes a good timetable**), so existing institutions
+give the same timetables as before. For `odd_hours`, the same screen says how many of a day's first lectures count as early and how
+many of its last count as late (one each by default; `early_lectures` and `late_lectures` in the workbook). These are lecture
+positions, so a class on its own clock follows its own hours. On the sample institution, weights of 10 for both took the extra
+classrooms from 24 to 0 and the early or late lectures from 8 to 0.
 
 On the sample institution, compared with a solver that ignores these goals (what v0.1.0 produced):
 
@@ -440,8 +448,8 @@ font such as Noto Sans.
 - **Scale is bounded.** Departments of a few hundred sessions work; whole-university timetables
   are untested (see [Performance and scale](#performance-and-scale)). Results at the larger sizes
   get better with a longer time limit and vary a little from run to run.
-- **Room choice is not optimised** beyond fitting kind and capacity; there are no preferences
-  such as keeping a class in one room.
+- **Room choice** fits kind and capacity, and can keep a class in one classroom (the `room_changes` goal, off by default);
+  there is no way yet to name a class's own room or to prefer a particular room for a course.
 - **PDF and non-Latin text:** set `AA_PDF_FONT` (see above) for Hindi and other Indian scripts.
 - **Breaking data change in v0.1.0:** "period" was renamed "lecture" (`lectures_per_day`,
   `max_lectures_per_day`, `Slot.lecture`) before release, so any data created earlier must be
@@ -464,10 +472,11 @@ font such as Noto Sans.
 - [x] Activity log (tamper-evident, per institution and for administrators)
 - [x] Password reset by e-mail (optional, needs a mail server)
 - [ ] Single sign-on
-- [x] Browser tests in CI (eleven journeys driving the real app)
+- [x] Browser tests in CI (twelve journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
-- [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
+- [x] Goals for keeping a class in one classroom and avoiding early or late lectures (off by default)
+- [ ] Further goals: named home rooms, consecutive-day spacing
 - [ ] Whole-university scale: decomposition across departments, measured on larger data
 
 ## Data and privacy
@@ -478,7 +487,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (eleven so far, about 170 checks). Each one starts its own copy of the app with an empty data folder.
+so on (twelve so far, about 180 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

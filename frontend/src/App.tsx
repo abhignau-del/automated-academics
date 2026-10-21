@@ -26,6 +26,8 @@ const GOALS: { key: keyof Quality; label: string; hint: string }[] = [
   { key: "peak_day_load", label: "Busiest-day load", hint: "Lectures on each class's busiest day, added up. Lower means a more even week" },
   { key: "repeat_course_day", label: "Repeated courses", hint: "Extra sessions of the same course on one day" },
   { key: "avoid_slot", label: "Avoided slots used", hint: "Lectures placed where a teacher asked not to teach" },
+  { key: "room_changes", label: "Extra classrooms", hint: "Classrooms a class uses for its theory lectures beyond the first, added up" },
+  { key: "odd_hours", label: "Early / late lectures", hint: "Class lectures in the first or last slots of the day (set in the settings)" },
 ];
 
 /** How good the timetable is on the soft goals. With unsaved edits, shows the change since the saved version. */
@@ -37,11 +39,11 @@ function QualityPanel({ quality, saved }: { quality: Quality; saved: Quality | n
       <table className="quality">
         <tbody>
           {GOALS.map(({ key, label, hint }) => {
-            const delta = saved ? quality[key] - saved[key] : 0;
+            const delta = saved ? (quality[key] ?? 0) - (saved[key] ?? 0) : 0;
             return (
               <tr key={key} title={hint}>
                 <td>{label}</td>
-                <td className="num">{quality[key]}</td>
+                <td className="num">{quality[key] ?? 0}</td>
                 <td className={"num delta " + (delta < 0 ? "better" : delta > 0 ? "worse" : "")}>
                   {delta ? (delta > 0 ? `+${delta}` : `${delta}`) : ""}
                 </td>

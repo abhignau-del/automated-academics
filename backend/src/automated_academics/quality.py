@@ -11,15 +11,17 @@ Metrics (lower is better, all in whole lectures or sessions)
   faculty_gaps       the same, for each faculty member
   peak_day_load      sum over classes of their busiest day's lecture count
   avoid_slot         lectures placed in slots a faculty member asked to avoid
+  room_changes       for each class, the classrooms its theory lectures use beyond the first
+  odd_hours          class lectures in the calendar's early or late slots of the day
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 
-from .models import Institution, Timetable, Weights
+from .models import Institution, RoomKind, Timetable, Weights
 
-METRICS = ("repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot")
+METRICS = ("repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot", "room_changes", "odd_hours")
 
 
 def _gaps(cells: set[tuple[int, int]]) -> int:
@@ -34,7 +36,9 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
     cal = inst.calendar
     offerings = {o.id: o for o in inst.offerings}
     faculty = {f.id: f for f in inst.faculty}
+    kinds = {c.code: c.room_kind for c in inst.courses}
     leaves = inst.leaf_batches()
+    classrooms: dict[str, set[str]] = defaultdict(set)  # class -> classrooms its theory lectures use
 
     batch_cells: dict[str, set[tuple[int, int]]] = {b: set() for b in leaves}
     fac_cells: dict[str, set[tuple[int, int]]] = defaultdict(set)
@@ -52,9 +56,12 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
         for b in leaves:
             if b in attending:
                 batch_cells[b].update(covered)
+                if kinds.get(off.course_code) == RoomKind.CLASSROOM:
+                    classrooms[b].add(p.room_id)
         avoid = {(s.day, s.lecture) for s in faculty[off.faculty_id].avoid}
         avoid_hits += sum(1 for c in covered if c in avoid)
 
+    odd = cal.odd_lectures()
     peak = 0
     for cells in batch_cells.values():
         per_day: dict[int, int] = defaultdict(int)
@@ -68,6 +75,8 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
         "faculty_gaps": sum(_gaps(c) for c in fac_cells.values()),
         "peak_day_load": peak,
         "avoid_slot": avoid_hits,
+        "room_changes": sum(len(rooms) - 1 for rooms in classrooms.values()),
+        "odd_hours": sum(1 for cells in batch_cells.values() for _, lecture in cells if lecture in odd),
     }
 
 

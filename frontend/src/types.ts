@@ -9,6 +9,7 @@ export interface Calendar {
   times?: LectureTime[]; // one per lecture; empty or missing = just "L1", "L2", ...
   day_times?: Record<number, LectureTime[]>; // days that run to their own clock
   clocks?: Record<string, LectureTime[]>; // named alternative clocks, picked per class (Batch.clock)
+  early_count?: number; late_count?: number; // how many first / last lectures of a day count as early / late (goal "odd hours")
 }
 export interface Room { id: string; name: string; capacity: number; kind: RoomKind }
 export interface Slot { day: number; lecture: number }
@@ -31,6 +32,7 @@ export interface Offering { id: string; course_code: string; faculty_id: string;
 /** Importance of each soft goal (0 switches it off). Names match `Quality`. */
 export interface Weights {
   repeat_course_day: number; batch_gaps: number; faculty_gaps: number; peak_day_load: number; avoid_slot: number;
+  room_changes: number; odd_hours: number;
 }
 
 /** A session fixed in place: the solver keeps it here and plans everything else around it. */
@@ -64,6 +66,7 @@ export interface ConflictDetail { message: string; offering_ids: string[] }
 /** Soft-goal measures of a timetable. Lower is better; 0 is ideal. */
 export interface Quality {
   repeat_course_day: number; batch_gaps: number; faculty_gaps: number; peak_day_load: number; avoid_slot: number;
+  room_changes?: number; odd_hours?: number; // missing in timetables made before these goals existed
 }
 export interface ConflictReport {
   ok: boolean; conflicts: string[]; details: ConflictDetail[];

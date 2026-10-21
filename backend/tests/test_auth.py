@@ -89,7 +89,7 @@ def test_everything_but_the_front_door_needs_a_login(app):
     with client(app) as c:
         assert c.get("/health").status_code == 200
         st = c.get("/auth/status").json()
-        assert st == {"auth": True, "setup_needed": True, "user": None}
+        assert st == {"auth": True, "setup_needed": True, "user": None, "reset_enabled": False}
         for method, path in [("get", "/institutions"), ("get", "/institutions/template"), ("post", "/institutions/check"),
                              ("get", "/jobs/x"), ("get", "/users")]:
             assert getattr(c, method)(path).status_code == 401, path
@@ -312,7 +312,7 @@ def test_unchanged_saves_keep_the_version(app, admin):
 
 def test_with_sign_in_off_nothing_changes(tmp_path):
     with TestClient(create_app(str(tmp_path / "t.db"), auth=False)) as c:
-        assert c.get("/auth/status").json() == {"auth": False, "setup_needed": False, "user": None}
+        assert c.get("/auth/status").json() == {"auth": False, "setup_needed": False, "user": None, "reset_enabled": False}
         iid = c.post("/institutions", json=inst_json()).json()["id"]
         assert c.get("/institutions").json()[0]["id"] == iid
         assert c.post("/auth/login", json={"username": "a", "password": PW}).status_code == 409

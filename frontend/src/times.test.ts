@@ -70,7 +70,7 @@ describe("clocks", () => {
       { id: "A-1", program: "P", level: "UG", semester: 1, section: "1", department: "D", strength: 15, group_of: "A", clock: null },
       { id: "B", program: "P", level: "UG", semester: 1, section: "B", department: "D", strength: 30, group_of: null, clock: null },
     ],
-    weights: { repeat_course_day: 1, batch_gaps: 1, faculty_gaps: 1, peak_day_load: 1, avoid_slot: 1 }, pins: [],
+    weights: { repeat_course_day: 1, batch_gaps: 1, faculty_gaps: 1, peak_day_load: 1, avoid_slot: 1, room_changes: 0, odd_hours: 0 }, pins: [],
   });
 
   it("uses a class's clock, then the default; a special day wins for everyone", () => {

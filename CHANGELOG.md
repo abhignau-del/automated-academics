@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Two new goals: stay in one room, avoid early and late lectures.** `room_changes` penalises each classroom a class uses for its theory
+  lectures beyond the first (labs and halls don't count); `odd_hours` penalises class lectures in the first or last slots of the day
+  (the calendar says how many of each, one by default). Both are off until weighted (Data → Settings), so existing institutions
+  give the same timetables; both appear in the quality panel, the workbook (`weight_room_changes`, `weight_odd_hours`,
+  `early_lectures`, `late_lectures`) and are measured independently of the solver. On the sample, weights of 10 took extra
+  classrooms from 24 to 0 and early/late lectures from 8 to 0.
 - **Forgot your password? (optional, shared mode).** With a mail server configured (`AA_SMTP_HOST`, `AA_SMTP_FROM`, `AA_PUBLIC_URL`, see the README),
   the sign-in screen offers a reset by e-mail: a one-use link that lasts an hour, replaced by any newer request, ending every sign-in of
   that person. The answer never reveals whether an account exists, requests and wrong links are throttled, only a hash of the link is

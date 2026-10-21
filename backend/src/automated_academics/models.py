@@ -80,6 +80,13 @@ class Calendar(BaseModel):
     # Named alternative clocks for classes that keep different hours (50-minute and 40-minute lectures, a morning
     # and an evening batch). A class picks one with `Batch.clock`; a day in `day_times` overrides it for everyone.
     clocks: dict[str, list[LectureTime]] = {}
+    # What "early" and "late" mean for the `odd_hours` goal: the first `early_count` and last `late_count` lectures of a day.
+    early_count: int = Field(default=1, ge=0)
+    late_count: int = Field(default=1, ge=0)
+
+    def odd_lectures(self) -> set[int]:
+        n = self.lectures_per_day
+        return set(range(min(self.early_count, n))) | set(range(max(n - self.late_count, 0), n))
 
     @model_validator(mode="after")
     def _times_make_sense(self) -> "Calendar":
@@ -153,6 +160,9 @@ class Weights(BaseModel):
     faculty_gaps: int = Field(default=3, ge=0)  # per idle lecture inside a faculty member's day
     peak_day_load: int = Field(default=4, ge=0)  # per lecture on a class's busiest day (spreads the week)
     avoid_slot: int = Field(default=6, ge=0)  # per lecture a faculty member asked to avoid
+    # Off (0) unless chosen, so existing institutions give the same timetables as before.
+    room_changes: int = Field(default=0, ge=0)  # per extra classroom a class uses for its theory lectures
+    odd_hours: int = Field(default=0, ge=0)  # per lecture a class has in an early or late slot of the day
 
 
 class Batch(BaseModel):

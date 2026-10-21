@@ -20,6 +20,8 @@ Soft goals (minimised as a weighted sum; weights live on `Institution.weights`)
   * faculty_gaps       idle lectures inside a faculty member's day
   * peak_day_load      a class's busiest day (spreads the week out)
   * avoid_slot         lectures in slots a faculty member asked to avoid
+  * room_changes       a class using several classrooms for its theory lectures (off unless weighted)
+  * odd_hours          class lectures in the calendar's early or late slots (off unless weighted)
 
 `quality.measure` computes the same quantities independently from a finished
 timetable; tests check the two agree.
@@ -119,7 +121,9 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
     per_day: dict[tuple[str, int], list[cp_model.IntVar]] = defaultdict(list)
     avoid_terms: list[tuple[int, cp_model.IntVar]] = []  # (avoided lectures covered, start var)
     # who is busy when, as lists of start variables; only needed for the gap and spread goals
-    need_occupancy = bool(w.batch_gaps or w.faculty_gaps or w.peak_day_load)
+    need_occupancy = bool(w.batch_gaps or w.faculty_gaps or w.peak_day_load or w.odd_hours)
+    leaf_set = set(inst.leaf_batches())
+    room_use: dict[tuple[str, str], list[cp_model.IntVar]] = defaultdict(list)  # (class, classroom) -> "this session is there"
     occupancy: dict[tuple[str, str, int, int], list[cp_model.IntVar]] = defaultdict(list)
 
     free_batches: set[str] = set()
@@ -181,6 +185,10 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                     model.NewOptionalFixedSizeIntervalVar(start, length, y, f"riv_{tag}_{r.id}"))
             model.AddExactlyOne(y for _, y in sess.rooms)
             sessions.append(sess)
+            if w.room_changes and course.room_kind == RoomKind.CLASSROOM:
+                for b in attending & leaf_set:
+                    for r, y in sess.rooms:
+                        room_use[(b, r.id)].append(y)
 
             for t, v in starts.items():
                 d, p = divmod(t, n_lectures)
@@ -378,6 +386,24 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                 terms["peak_day_load"].append(peak)
     if w.avoid_slot:
         terms["avoid_slot"].extend(n * v for n, v in avoid_terms)
+    if w.odd_hours:
+        odd = sorted(cal.odd_lectures())
+        for b in leaves:
+            for d in range(n_days):
+                terms["odd_hours"].extend(c for t in odd if (c := occ("B", b, d, t)) is not None)
+    if w.room_changes:
+        used_by: dict[str, list[cp_model.IntVar]] = defaultdict(list)
+        for (b, rid), ys in room_use.items():
+            used = model.NewBoolVar(f"used_{b}_{rid}")
+            for y in ys:
+                model.AddImplication(y, used)
+            model.AddBoolOr(ys).OnlyEnforceIf(used)  # used exactly when one of its sessions is there
+            used_by[b].append(used)
+        for b, used_rooms in used_by.items():
+            if len(used_rooms) > 1:  # every class here has a theory session, so at least one room is used
+                extra = model.NewIntVar(0, len(used_rooms) - 1, f"extra_rooms_{b}")
+                model.Add(extra == sum(used_rooms) - 1)
+                terms["room_changes"].append(extra)
 
     def finish(placements: list[Placement], status: str) -> Timetable:
         # Quality comes from the independent measurement of what is actually returned, so it is

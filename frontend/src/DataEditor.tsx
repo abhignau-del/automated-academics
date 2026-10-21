@@ -47,6 +47,8 @@ const WEIGHT_FIELDS: { key: keyof Weights; label: string; hint: string }[] = [
   { key: "peak_day_load", label: "Even week", hint: "Penalty per lecture on each class's busiest day, which spreads the week out" },
   { key: "repeat_course_day", label: "Repeated courses", hint: "Penalty per extra session of one course on the same day" },
   { key: "avoid_slot", label: "Avoided slots", hint: "Penalty per lecture placed where a teacher asked not to teach" },
+  { key: "room_changes", label: "Same classroom", hint: "Penalty per extra classroom a class uses for its theory lectures, so a class tends to stay in one room (labs and halls don't count). Off (0) by default" },
+  { key: "odd_hours", label: "Early / late lectures", hint: "Penalty per class lecture in the first or last slots of the day (counted just below). Off (0) by default" },
 ];
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -845,10 +847,20 @@ export function DataEditor({ iid, institution, onSaved, onDeleted, onDirtyChange
             <div className="weights">
               {WEIGHT_FIELDS.map((w) => (
                 <label key={w.key} title={w.hint}>{w.label}
-                  <Num label={w.label} value={draft.weights[w.key]}
+                  <Num label={w.label} value={draft.weights[w.key] ?? 0}
                     onChange={(v) => setDraft({ ...draft, weights: { ...draft.weights, [w.key]: v } }, `settings.${w.key}`)} />
                 </label>
               ))}
+            </div>
+            <div className="weights">
+              <label title="How many lectures at the start of each day count as early, for 'Early / late lectures'">First lectures that count as early
+                <Num label="first lectures counted as early" value={draft.calendar.early_count ?? 1}
+                  onChange={(v) => setDraft({ ...draft, calendar: { ...draft.calendar, early_count: v } }, "settings.early")} />
+              </label>
+              <label title="How many lectures at the end of each day count as late, for 'Early / late lectures'">Last lectures that count as late
+                <Num label="last lectures counted as late" value={draft.calendar.late_count ?? 1}
+                  onChange={(v) => setDraft({ ...draft, calendar: { ...draft.calendar, late_count: v } }, "settings.late")} />
+              </label>
             </div>
           </fieldset>
           {inSection("settings").filter((i) => i.field !== "lectures_per_day").map((i, k) => (

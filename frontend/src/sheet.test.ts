@@ -30,7 +30,7 @@ const base = (): Institution => ({
     { id: "O2", course_code: "C2", faculty_id: "F2", batch_ids: ["S-A"], sessions: [2] },
     { id: "O3", course_code: "C1", faculty_id: "F1", batch_ids: ["S", "T"], sessions: [1, 1] },
   ],
-  weights: { repeat_course_day: 5, batch_gaps: 10, faculty_gaps: 3, peak_day_load: 4, avoid_slot: 6 },
+  weights: { repeat_course_day: 5, batch_gaps: 10, faculty_gaps: 3, peak_day_load: 4, avoid_slot: 6, room_changes: 0, odd_hours: 0 },
   pins: [],
 });
 

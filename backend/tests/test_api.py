@@ -64,7 +64,7 @@ def test_upload_solve_and_view(client, xlsx_bytes):
     # a solver result must pass the independent validator
     check = client.post(f"/institutions/{iid}/validate", json=tt).json()
     assert (check["ok"], check["conflicts"], check["details"]) == (True, [], [])
-    assert set(check["quality"]) == {"repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot"}
+    assert set(check["quality"]) == {"repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot", "room_changes", "odd_hours"}
     assert check["penalty"] == tt["penalty"]  # live scoring agrees with what the solver reported
 
     # a hand-edit that creates a clash is reported, naming the offerings involved
