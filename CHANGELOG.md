@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+An activity log. Existing data, workbooks and databases keep working; databases gain an `audit` table in place, and the log needs shared mode (sign-in).
+
+- **Activity log (shared mode).** Records who did what: sign-ins and failed attempts (name and address, never the password), sign-out, password
+  changes, account creation/changes/deletion, institution created/changed/deleted (with a plain sentence such as "changed 2 teachers
+  (CSF1, CSF2) and 1 class"), timetables asked for, finished or failed (by "The solver"), hand edits and kept imports, links
+  published/changed/withdrawn (the name, never the address), sharing and removals, and refused attempts by department-limited editors.
+  An institution's owner opens **History…**; an administrator opens **Activity log…** from the account menu. Filters (kind, person, since,
+  a word), paging, and a CSV download that neutralises formula-looking cells. Entries are append-only and hash-chained; **Verify
+  integrity** (administrators) reports the first altered or missing entry. Passwords, session tokens and link addresses are never
+  stored; people opening a published link are not logged; a failing log write never blocks the action. Nothing is recorded with sign-in
+  off. New `audit` table, added in place. API: `GET /audit`, `/audit.csv`, `/audit/verify`, `/institutions/{id}/audit(.csv)`.
+
 ## v0.10.0 (2026-10-20)
 
 Read-only publish links. Existing data, workbooks and databases keep working; databases gain a `publications` table in place, and publishing needs shared mode (sign-in).

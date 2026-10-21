@@ -3,6 +3,7 @@ import * as api from "./api";
 import { canDelete, canEdit, canShare, departmentsOf, roleOf, rowEditable, scopeOf } from "./access";
 import { AccountMenu, useSession } from "./auth";
 import { DataEditor } from "./DataEditor";
+import { AuditDialog } from "./AuditDialog";
 import { PublishDialog } from "./PublishDialog";
 import { ShareDialog } from "./ShareDialog";
 import { Grid } from "./Grid";
@@ -78,6 +79,7 @@ export default function App() {
   const [viewChoice, setView] = useState<"timetable" | "data">("timetable");
   const [sharing, setSharing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [showLog, setShowLog] = useState(false); // this institution's activity log
   const session = useSession(); // null when sign-in is off
   const [jobStale, setJobStale] = useState(false); // data was edited after the shown timetable was made
   const [dataDirty, setDataDirty] = useState(false); // unsaved edits in the Data tab
@@ -339,6 +341,7 @@ export default function App() {
       </aside>
 
       {publishing && iid && inst && jobId && <PublishDialog iid={iid} name={inst.name} jobId={jobId} onClose={() => setPublishing(false)} />}
+      {showLog && iid && inst && <AuditDialog iid={iid} name={inst.name} onClose={() => setShowLog(false)} />}
       {sharing && iid && inst && <ShareDialog iid={iid} name={inst.name} departments={departmentsOf(inst)} onClose={() => setSharing(false)} />}
       {importing === "workload" && <WorkloadImport onCreated={afterImport} onClose={() => setImporting(null)} />}
       {importing === "grid" && <GridImport onCreated={(id) => afterImport(id, "timetable")} onClose={() => setImporting(null)} />}
@@ -391,6 +394,7 @@ export default function App() {
               <span className="muted">{inst.batches.length} batches · {inst.faculty.length} faculty · {inst.rooms.length} rooms · {inst.offerings.reduce((n, o) => n + o.sessions.length, 0)} sessions/week</span>
               <span className="spacer" />
               {session && canShare(role) && <button className="btn" onClick={() => setSharing(true)}>Share…</button>}
+              {session && canShare(role) && <button className="btn" onClick={() => setShowLog(true)} title="Who changed what, and when">History…</button>}
               {session && editable && scope === null && jobId && !dirty && (
                 <button className="btn" onClick={() => setPublishing(true)} title="Give the timetable on screen a link anyone can open">Publish…</button>
               )}

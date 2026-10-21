@@ -3,6 +3,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import * as api from "./api";
+import { AuditDialog } from "./AuditDialog";
 import { UsersDialog } from "./UsersDialog";
 import type { AuthStatus, AuthUser } from "./types";
 
@@ -165,7 +166,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 export function AccountMenu() {
   const session = useSession();
   const [open, setOpen] = useState(false);
-  const [dialog, setDialog] = useState<"password" | "people" | null>(null);
+  const [dialog, setDialog] = useState<"password" | "people" | "log" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -186,11 +187,13 @@ export function AccountMenu() {
           <div className="menu-list" role="menu">
             <button role="menuitem" onClick={() => { setOpen(false); setDialog("password"); }}>Change password…</button>
             {user.role === "admin" && <button role="menuitem" onClick={() => { setOpen(false); setDialog("people"); }}>People…</button>}
+            {user.role === "admin" && <button role="menuitem" onClick={() => { setOpen(false); setDialog("log"); }}>Activity log…</button>}
             <button role="menuitem" onClick={() => void signOut()}>Sign out</button>
           </div>
         )}
       </div>
       {dialog === "password" && <PasswordDialog onClose={() => setDialog(null)} />}
+      {dialog === "log" && <AuditDialog onClose={() => setDialog(null)} />}
       {dialog === "people" && <UsersDialog me={user.id} onClose={() => setDialog(null)} />}
     </>
   );

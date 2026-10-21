@@ -139,6 +139,16 @@ docker compose up -d        # then open http://localhost:8000
    subject's teacher and room.
 6. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
    an offer to load the other version.
+7. **Activity log.** Shared mode keeps a record of who did what: sign-ins (and failed attempts, with the name typed and the
+   address, never the password), account changes, changes to an institution's data ("Dr. Coordinator changed 2 teachers
+   (CSF1, CSF2)"), timetables generated, finished and edited, links published and withdrawn, sharing, and attempts a
+   department-limited editor was refused. An institution's **owner** opens **History…** for that institution; an
+   **administrator** opens **Activity log…** in the account menu for everything. Filter by kind, person, date or a word, load
+   more, and download a CSV (cells that look like formulas are neutralised so a spreadsheet never runs them). Each entry is
+   chained to the one before by a SHA-256 hash, so **Verify integrity** reports an entry that was edited or removed behind the
+   app's back. It never stores passwords, sign-in tokens or link addresses, and people opening a published link are not logged.
+   If the log cannot be written the action still goes ahead (and the error is logged). There is no deletion and no automatic
+   clean-up: the table grows by a few hundred bytes per action. Nothing is recorded with sign-in off (single user).
 
 Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
 automated_academics.api:create_app --factory --port 8000` (build the screen first with `npm run build:app` in
@@ -147,8 +157,7 @@ sign-in cookie is sent only securely. Back up the one data file (`/data/automate
 
 What this does and does not do: passwords are stored as salted hashes and a sign-in is a random token kept in an
 HttpOnly cookie; guessing passwords is slowed down; every request is checked on the server. There is **no password
-reset by email** (an administrator sets a new one), no single sign-on (SAML/OIDC), no audit log, and no per-department
-permissions yet (access is per institution). Run **one** server process: jobs and throttling live in that process
+reset by email** (an administrator sets a new one) and no single sign-on (SAML/OIDC). Run **one** server process: jobs and throttling live in that process
 and the data is a single SQLite file, which suits tens of people rather than thousands. The Docker image is built
 and smoke-tested by CI; the sign-in, sharing and conflict behaviour is covered by automated API tests and a browser test.
 
@@ -407,7 +416,7 @@ font such as Noto Sans.
   lost when you save or reload, and it hasn't been tried beyond about 1,000 offerings. Saving replaces the whole
   institution, so two people editing at once would overwrite each other (last save wins).
 - **Sign-in is optional and basic.** Off by default (single user). In server mode see *Sharing with a team* for what
-  it covers; it has no single sign-on, e-mail reset or audit log yet.
+  it covers; it has no single sign-on or e-mail reset yet.
 - **One solve at a time**, on a single machine, with data in a local SQLite file.
 - **The Windows app is unsigned and has only been tried on Windows 11.** The release workflow that builds it has
   not run on GitHub yet; the local build and a start-to-export smoke test (`scripts/smoke_app.py`) have.
@@ -437,8 +446,9 @@ font such as Noto Sans.
 - [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
 - [x] Editors limited to some departments
 - [x] Read-only publishing links
-- [ ] Single sign-on, audit log, password reset by email
-- [x] Browser tests in CI (nine journeys driving the real app)
+- [x] Activity log (tamper-evident, per institution and for administrators)
+- [ ] Single sign-on, password reset by email
+- [x] Browser tests in CI (ten journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
@@ -452,7 +462,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (nine so far, about 140 checks). Each one starts its own copy of the app with an empty data folder.
+so on (ten so far, about 155 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

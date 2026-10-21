@@ -9,6 +9,7 @@ control. Do not expose it to the public internet as is.
 
 from __future__ import annotations
 
+import csv
 import io
 import json
 import logging
@@ -43,6 +44,7 @@ from .validate import find_conflict_details
 from .views import entities, session_views
 from .grid_io import GridError, GridOptions, import_grid
 from .scope import institution_violations, timetable_violations
+from .changes import describe_changes, describe_timetable_edit
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
 
 log = logging.getLogger("automated_academics")
@@ -174,6 +176,9 @@ class MemberRole(BaseModel):
     departments: list[str] | None = Field(default=None, max_length=200)
 
 
+_CSV_ROWS = 50_000  # most rows one CSV download holds
+
+
 def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None,
                static_dir: str | None = None, auth: bool | None = None) -> FastAPI:
     """`auth` switches on accounts (default: the AA_AUTH environment variable). Off, everyone is one local
@@ -230,6 +235,27 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     def me(request: Request) -> User:
         return request.state.user
 
+    def audit(request: Request | None, action: str, what: str, iid: str | None = None, detail: dict[str, Any] | None = None,
+              actor: User | str | None = None, institution: str | None = None) -> None:
+        """Write one line to the activity log (shared mode only). Never raises: a failing log must not stop the work.
+
+        `what` is the sentence after the person's name. Never pass a password, a session token or a link token."""
+        if not auth_on:
+            return
+        try:
+            user = actor if isinstance(actor, User) else (getattr(request.state, "user", None) if request is not None and actor is None else None)
+            if isinstance(actor, str):  # someone who is not (yet) signed in, e.g. a failed sign-in: only the typed name
+                aid, aname, who = None, actor[:80], actor[:80]
+            elif user is not None:
+                aid, aname, who = user.id, user.username, user.display_name or user.username
+            else:
+                aid, aname, who = None, "system", "The solver"
+            ip = request.client.host if request is not None and request.client else None
+            name = institution if institution is not None else (store.institution_name(iid) if iid else None)
+            store.add_audit(aid, aname, action, f"{who} {what}", iid, name, detail, ip)
+        except Exception:  # noqa: BLE001 - fail open
+            log.exception("could not write the audit log")
+
     def allow(request: Request, iid: str, level: str) -> None:
         """Let the signed-in user through if they may `level` ("viewer" / "editor" / "owner") this institution."""
         user = me(request)
@@ -253,6 +279,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
 
     def whole_institution_only(request: Request, iid: str, what: str) -> None:
         if scope_of(request, iid) is not None:
+            audit(request, "access.refused", f"was refused: tried to {what}", iid)
             raise HTTPException(403, detail={
                 "message": f"You are an editor for some departments only, so you can't {what}. "
                            "Ask an editor of the whole institution.", "scoped": True})
@@ -292,15 +319,22 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
 
     def run_job(jid: str, inst: Institution, limit: float) -> None:
         store.set_running(jid)
+        iid = store.get_job(jid)["institution_id"]
         try:
-            store.finish_job(jid, solve_auto(inst, time_limit_s=limit))
+            tt = solve_auto(inst, time_limit_s=limit)
+            store.finish_job(jid, tt)
+            audit(None, "timetable.finished", f"finished a timetable ({tt.status.lower()})", iid, {"job": jid, "status": tt.status},
+                  institution=inst.name)
         except Unsatisfiable as e:  # proven impossible: say which of the user's constraints clash
             store.fail_job(jid, explain_message(inst, str(e)))
+            audit(None, "timetable.failed", "could not make a timetable: the rules clash", iid, {"job": jid}, institution=inst.name)
         except InfeasibleError as e:
             store.fail_job(jid, str(e))
+            audit(None, "timetable.failed", "could not make a timetable", iid, {"job": jid}, institution=inst.name)
         except Exception:  # noqa: BLE001 - never leave a job stuck in "running"
             log.exception("job %s crashed", jid)
             store.fail_job(jid, "internal error while solving")
+            audit(None, "timetable.failed", "failed while making a timetable", iid, {"job": jid}, institution=inst.name)
 
     # ---------------- meta ----------------
     @app.get("/health")
@@ -408,7 +442,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     @app.post("/institutions", status_code=201)
     def create_institution(request: Request, data: dict[str, Any] = Body(...)):
         inst, notes = _valid_or_422(data)
-        return {"id": store.add_institution(inst, owner_id=owner_of(request)), "name": inst.name, "issues": notes}
+        iid = store.add_institution(inst, owner_id=owner_of(request))
+        audit(request, "institution.created", f"created the institution \u201c{inst.name}\u201d", iid)
+        return {"id": iid, "name": inst.name, "issues": notes}
 
     @app.put("/institutions/{iid}")
     def update_institution(iid: str, request: Request, response: Response, data: dict[str, Any] = Body(...)):
@@ -422,6 +458,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if scope is not None:
             bad = institution_violations(before, inst, scope)
             if bad:
+                audit(request, "access.refused", "was refused: tried to change data outside their departments", iid,
+                      {"violations": bad[:20]})
                 raise HTTPException(403, detail={
                     "message": "You can change only the data of " + ", ".join(sorted(scope)) + ". Not allowed: " + "; ".join(bad[:6])
                                + (f"; and {len(bad) - 6} more" if len(bad) > 6 else "") + ".",
@@ -433,6 +471,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
                 "message": "Someone else saved changes to this institution after you opened it. "
                            "Reload to see their changes, then make yours again.",
                 "conflict": True}) from None
+        what, detail = describe_changes(before, inst)
+        if what:
+            audit(request, "institution.updated", what, iid, detail)
         etag(response, iid)
         return {"id": iid, "name": inst.name, "issues": notes, "version": store.institution_version(iid)}
 
@@ -450,8 +491,10 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     def delete_institution(iid: str, request: Request):
         """Permanently delete an institution and all of its timetables."""
         institution_or_404(iid, request, "owner")
+        name = store.institution_name(iid)
         if not store.delete_institution(iid):
             raise HTTPException(404, "institution not found")
+        audit(request, "institution.deleted", f"deleted the institution \u201c{name}\u201d and all its timetables", iid, institution=name)
 
     @app.post("/institutions/upload", status_code=201)
     def upload_institution(request: Request, file: UploadFile = File(...)):
@@ -467,8 +510,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             }) from None
         except (zipfile.BadZipFile, KeyError, OSError):
             raise HTTPException(400, "not a valid .xlsx workbook") from None
-        return {"id": store.add_institution(inst, owner_id=owner_of(request)), "name": inst.name,
-                "issues": [i.as_dict() for i in diagnose(inst)]}
+        iid = store.add_institution(inst, owner_id=owner_of(request))
+        audit(request, "institution.created", f"created the institution \u201c{inst.name}\u201d from a workbook", iid)
+        return {"id": iid, "name": inst.name, "issues": [i.as_dict() for i in diagnose(inst)]}
 
     @app.get("/institutions/{iid}", response_model=Institution)
     def get_institution(iid: str, request: Request, response: Response):
@@ -482,6 +526,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         whole_institution_only(request, iid, "generate a timetable (it replaces everyone's)")
         limit = (req or SolveRequest()).time_limit_s
         jid = store.create_job(iid, limit)
+        audit(request, "timetable.generated", "asked for a new timetable", iid, {"job": jid, "time_limit_s": limit})
         pool.submit(run_job, jid, inst, limit)
         return {"job_id": jid, "status": "queued"}
 
@@ -500,6 +545,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         tt = Timetable(placements=body.placements, status="IMPORTED")
         jid = store.create_job(iid, 0)
         store.finish_job(jid, tt)
+        audit(request, "timetable.imported_kept", f"kept an existing timetable of {len(tt.placements)} sessions", iid, {"job": jid})
         return {"job_id": jid, "report": _report(inst, tt)}
 
     @app.post("/institutions/{iid}/validate", response_model=ConflictReport)
@@ -540,10 +586,15 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if scope is not None:
             bad = timetable_violations(inst, store.get_timetable(jid), tt, scope)
             if bad:
+                audit(request, "access.refused", "was refused: tried to move sessions outside their departments",
+                      job["institution_id"], {"violations": bad[:20]})
                 raise HTTPException(403, detail={
                     "message": "You can move only sessions of " + ", ".join(sorted(scope)) + ". Not allowed: " + "; ".join(bad[:6]) + ".",
                     "scoped": True, "violations": bad})
+        what, detail = describe_timetable_edit(store.get_timetable(jid), tt)
         store.save_timetable(jid, tt.model_copy(update={"status": "MANUAL"}))
+        if what:
+            audit(request, "timetable.edited", what, job["institution_id"], {"job": jid, **detail})
         return _report(inst, tt)
 
     def _exportable(jid: str, request: Request) -> tuple[Institution, Timetable]:
@@ -608,7 +659,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
                 "user": user.public() if user else None}
 
     @app.post("/auth/setup", status_code=201)
-    def auth_setup(body: NewUser, response: Response):
+    def auth_setup(body: NewUser, request: Request, response: Response):
         """Create the first administrator. Only works while there are no users at all."""
         if not auth_on:
             raise HTTPException(409, "sign-in is switched off")
@@ -616,6 +667,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(409, "already set up")
         user = _create_user(body.model_copy(update={"role": "admin"}))
         start_session(response, user["id"])
+        audit(request, "auth.setup", "set up the first administrator account", actor=authlib.user_from_row(user))
         return authlib.user_from_row(user).public()
 
     def _create_user(body: NewUser) -> dict:
@@ -644,15 +696,20 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             authlib.burn_time()
         if not good:
             throttle.failed(key)
+            audit(request, "auth.login_failed", "failed to sign in", actor=name or "(blank)",
+                  detail={"known_user": row is not None})
             raise HTTPException(401, "wrong username or password")
         throttle.succeeded(key)
         start_session(response, row["id"])
+        audit(request, "auth.login", "signed in", actor=authlib.user_from_row(row))
         return authlib.user_from_row(row).public()
 
     @app.post("/auth/logout", status_code=204)
     def logout(request: Request, response: Response):
         token = request.cookies.get(SESSION_COOKIE)
         if token:
+            if getattr(request.state, "user", None) is not None:
+                audit(request, "auth.logout", "signed out")
             store.delete_session(authlib.token_hash(token))
         response.delete_cookie(SESSION_COOKIE, path="/")
 
@@ -667,6 +724,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         except ValueError as e:
             raise HTTPException(422, str(e)) from None
         store.update_user(user.id, password_hash=authlib.hash_password(body.new))
+        audit(request, "auth.password_changed", "changed their own password")
         store.delete_user_sessions(user.id)  # other devices must sign in again; the caller is signed out too
         request.state.user = None
 
@@ -688,7 +746,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     @app.post("/users", status_code=201)
     def add_user(body: NewUser, request: Request):
         admin_only(request)
-        return authlib.user_from_row(_create_user(body)).public()
+        created = authlib.user_from_row(_create_user(body))
+        audit(request, "user.created", f"created the account {created.username} ({created.role})", detail={"user": created.username, "role": created.role})
+        return created.public()
 
     @app.patch("/users/{uid}")
     def change_user(uid: str, body: UserChanges, request: Request):
@@ -716,6 +776,18 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         store.update_user(uid, **fields)
         if body.disabled or "password_hash" in fields:
             store.delete_user_sessions(uid)
+        said = []
+        if "display_name" in fields:
+            said.append("renamed them")
+        if "password_hash" in fields:
+            said.append("reset their password")
+        if "role" in fields:
+            said.append(f"made them {'an administrator' if fields['role'] == 'admin' else 'an ordinary member'}")
+        if "disabled" in fields:
+            said.append("switched the account off" if fields["disabled"] else "switched the account back on")
+        if said:
+            audit(request, "user.changed", f"changed the account {row['username']}: " + ", ".join(said),
+                  detail={"user": row["username"], "fields": sorted(k.replace("password_hash", "password") for k in fields)})
         return authlib.user_from_row(store.get_user(uid)).public()
 
     @app.delete("/users/{uid}", status_code=204)
@@ -725,7 +797,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(404, "user not found")
         if uid == admin.id or last_admin(uid):
             raise HTTPException(409, "you can't delete the last administrator, or yourself")
+        gone = store.get_user(uid)["username"]
         store.delete_user(uid)
+        audit(request, "user.deleted", f"deleted the account {gone}", detail={"user": gone})
 
     # ---------------- publishing a timetable by link ----------------
     def link_view(p: dict, request: Request) -> dict:
@@ -768,6 +842,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         finished_job_of(iid, job_id)
         kinds = [k for k in _ALL_KINDS if k in body.kinds]
         row = store.add_publication(iid, job_id, authlib.new_token(), body.label.strip(), kinds, me(request).id, body.expires_days)
+        audit(request, "publication.created", f"published a timetable link \u201c{row['label'] or 'untitled'}\u201d", iid,
+              {"label": row["label"], "kinds": kinds, "expires_days": body.expires_days, "job": job_id})
         return link_view(row, request)
 
     @app.patch("/institutions/{iid}/publications/{pid}")
@@ -787,13 +863,18 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             fields["expires_at"] = (datetime.now(timezone.utc) + timedelta(days=body.expires_days)).isoformat(timespec="microseconds") \
                 if body.expires_days else None
         store.update_publication(pid, iid, **fields)
-        return link_view(store.get_publication(pid, iid), request)
+        row = store.get_publication(pid, iid)
+        audit(request, "publication.changed", f"changed the timetable link \u201c{row['label'] or 'untitled'}\u201d ({', '.join(sorted(fields))})", iid,
+              {"label": row["label"], "fields": sorted(fields)})
+        return link_view(row, request)
 
     @app.delete("/institutions/{iid}/publications/{pid}", status_code=204)
     def revoke(iid: str, pid: str, request: Request):
         publisher(request, iid)
+        label = (store.get_publication(pid, iid) or {}).get("label")
         if not store.delete_publication(pid, iid):
             raise HTTPException(404, "no such link")
+        audit(request, "publication.withdrawn", f"withdrew the timetable link \u201c{label or 'untitled'}\u201d", iid, {"label": label})
 
     # what anyone holding a link can see: only the timetable it was made for, only the views that were chosen
     def open_link(token: str, request: Request, response: Response) -> tuple[dict, Institution, Timetable]:
@@ -883,6 +964,9 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if departments and body.role != "editor":
             raise HTTPException(422, "only an editor can be limited to some departments")
         store.set_member(iid, target["id"], body.role, departments)
+        audit(request, "member.set", f"gave {target['username']} {body.role} access"
+              + (" limited to " + ", ".join(sorted(departments)) if departments else ""), iid,
+              {"user": target["username"], "role": body.role, "departments": sorted(departments) if departments else None})
         return store.list_members(iid)
 
     @app.delete("/institutions/{iid}/members/{username}")
@@ -895,7 +979,67 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if len(owners) == 1 and owners[0]["id"] == target["id"]:
             raise HTTPException(409, "an institution needs at least one owner")
         store.remove_member(iid, target["id"])
+        audit(request, "member.removed", f"removed {target['username']}'s access", iid, {"user": target["username"]})
         return store.list_members(iid)
+
+    # ---------------- the activity log ----------------
+    def logging_on() -> None:
+        if not auth_on:
+            raise HTTPException(409, "the activity log needs shared mode (sign-in); nothing is recorded without it")
+
+    def clean_limit(limit: int) -> int:
+        return max(1, min(limit, 200))
+
+    def csv_cell(v: Any) -> str:
+        text = "" if v is None else str(v)
+        return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text  # a spreadsheet must not run a cell as a formula
+
+    def audit_csv(rows: list[dict]) -> StreamingResponse:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["When (UTC)", "Who", "What", "Institution", "Action", "From"])
+        for r in rows:
+            w.writerow([csv_cell(r["at"]), csv_cell(r["actor"]), csv_cell(r["summary"]), csv_cell(r["institution"]),
+                        csv_cell(r["action"]), csv_cell(r["ip"])])
+        return StreamingResponse(io.BytesIO(("\ufeff" + buf.getvalue()).encode("utf-8")), media_type="text/csv",
+                                 headers=_attachment("activity-log.csv"))
+
+    @app.get("/audit")
+    def audit_all(request: Request, user: str | None = None, action: str | None = None, institution: str | None = None,
+                  since: str | None = None, until: str | None = None, q: str | None = None, before: int | None = None,
+                  limit: int = 50):
+        logging_on()
+        admin_only(request)
+        return store.list_audit(institution, user, action, since, until, q, before, clean_limit(limit))
+
+    @app.get("/audit.csv")
+    def audit_all_csv(request: Request, user: str | None = None, action: str | None = None, institution: str | None = None,
+                      since: str | None = None, until: str | None = None, q: str | None = None):
+        logging_on()
+        admin_only(request)
+        return audit_csv(store.list_audit(institution, user, action, since, until, q, None, _CSV_ROWS))
+
+    @app.get("/audit/verify")
+    def audit_verify(request: Request):
+        """Recompute the chain of hashes; says where the first altered or missing entry is, if there is one."""
+        logging_on()
+        admin_only(request)
+        return store.verify_audit()
+
+    @app.get("/institutions/{iid}/audit")
+    def institution_audit(iid: str, request: Request, user: str | None = None, action: str | None = None,
+                          since: str | None = None, until: str | None = None, q: str | None = None,
+                          before: int | None = None, limit: int = 50):
+        logging_on()
+        institution_or_404(iid, request, "owner")
+        return store.list_audit(iid, user, action, since, until, q, before, clean_limit(limit))
+
+    @app.get("/institutions/{iid}/audit.csv")
+    def institution_audit_csv(iid: str, request: Request, user: str | None = None, action: str | None = None,
+                              since: str | None = None, until: str | None = None, q: str | None = None):
+        logging_on()
+        institution_or_404(iid, request, "owner")
+        return audit_csv(store.list_audit(iid, user, action, since, until, q, None, _CSV_ROWS))
 
     # The packaged app serves the built screen itself, from the same address as the engine.
     # Mounted last so every API route above takes priority.

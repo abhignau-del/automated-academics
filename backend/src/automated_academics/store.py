@@ -6,6 +6,7 @@ simple; swap for PostgreSQL later if multi-user hosting needs it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
@@ -37,6 +38,12 @@ CREATE TABLE IF NOT EXISTS members (
     institution_id TEXT NOT NULL REFERENCES institutions(id), user_id TEXT NOT NULL REFERENCES users(id),
     role TEXT NOT NULL, PRIMARY KEY (institution_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS audit (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor_id TEXT, actor TEXT NOT NULL, action TEXT NOT NULL,
+    institution_id TEXT, institution TEXT, summary TEXT NOT NULL, detail TEXT NOT NULL, ip TEXT,
+    prev_hash TEXT NOT NULL, hash TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_by_institution ON audit (institution_id, seq);
 CREATE TABLE IF NOT EXISTS publications (
     id TEXT PRIMARY KEY, institution_id TEXT NOT NULL REFERENCES institutions(id), job_id TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE, label TEXT NOT NULL, kinds TEXT NOT NULL,
@@ -47,6 +54,16 @@ CREATE TABLE IF NOT EXISTS publications (
 
 class Conflict(Exception):
     """The data was changed by someone else since the caller read it."""
+
+
+_GENESIS = "0" * 64
+
+
+def _audit_hash(prev: str, row: dict) -> str:
+    """Each entry's hash covers the one before it, so editing or removing an entry breaks every hash after it."""
+    body = json.dumps([row["at"], row["actor_id"], row["actor"], row["action"], row["institution_id"], row["institution"],
+                       row["summary"], row["detail"], row["ip"]], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256((prev + body).encode("utf-8")).hexdigest()
 
 
 def _without_pins(data: str) -> dict:
@@ -228,6 +245,67 @@ class Store:
     def delete_user_sessions(self, uid: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+
+    # ---- the audit log: append-only, each entry chained to the one before ----
+    def institution_name(self, iid: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute("SELECT name FROM institutions WHERE id=?", (iid,)).fetchone()
+        return row["name"] if row else None
+
+    def add_audit(self, actor_id: str | None, actor: str, action: str, summary: str, institution_id: str | None = None,
+                  institution: str | None = None, detail: dict[str, Any] | None = None, ip: str | None = None) -> int:
+        row = {"at": _now(), "actor_id": actor_id, "actor": actor, "action": action, "institution_id": institution_id,
+               "institution": institution, "summary": summary, "detail": json.dumps(detail or {}, sort_keys=True, ensure_ascii=False),
+               "ip": ip}
+        with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")  # one writer at a time, so the chain has no forks
+            last = c.execute("SELECT hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
+            prev = last["hash"] if last else _GENESIS
+            cur = c.execute(
+                "INSERT INTO audit (at, actor_id, actor, action, institution_id, institution, summary, detail, ip, prev_hash, hash) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (row["at"], actor_id, actor, action, institution_id, institution, summary, row["detail"], ip, prev, _audit_hash(prev, row)))
+            return int(cur.lastrowid)
+
+    def list_audit(self, institution_id: str | None = None, user: str | None = None, action: str | None = None,
+                   since: str | None = None, until: str | None = None, q: str | None = None, before: int | None = None,
+                   limit: int = 50) -> list[dict[str, Any]]:
+        where, args = [], []
+        if institution_id:
+            where.append("institution_id = ?"); args.append(institution_id)
+        if user:
+            where.append("actor = ?"); args.append(user)
+        if action:
+            where.append("(action = ? OR action LIKE ?)"); args += [action, action.rstrip(".") + ".%"]
+        if since:
+            where.append("at >= ?"); args.append(since)
+        if until:
+            where.append("at <= ?"); args.append(until)
+        if q:
+            where.append("(summary LIKE ? ESCAPE '\\' OR actor LIKE ? ESCAPE '\\' OR institution LIKE ? ESCAPE '\\')")
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            args += [like, like, like]
+        if before:
+            where.append("seq < ?"); args.append(before)
+        sql = ("SELECT seq, at, actor_id, actor, action, institution_id, institution, summary, detail, ip FROM audit"
+               + (" WHERE " + " AND ".join(where) if where else "") + " ORDER BY seq DESC LIMIT ?")
+        with self._conn() as c:
+            rows = c.execute(sql, (*args, limit)).fetchall()
+        out = [dict(r) for r in rows]
+        for r in out:
+            r["detail"] = json.loads(r["detail"])
+        return out
+
+    def verify_audit(self) -> dict[str, Any]:
+        """Recompute the whole chain. `ok` is False, with the first bad entry, if anything was edited or removed from the middle."""
+        prev, checked = _GENESIS, 0
+        with self._conn() as c:
+            for r in c.execute("SELECT * FROM audit ORDER BY seq"):
+                row = dict(r)
+                if row["prev_hash"] != prev or row["hash"] != _audit_hash(prev, row):
+                    return {"ok": False, "checked": checked, "first_bad": row["seq"]}
+                prev, checked = row["hash"], checked + 1
+        return {"ok": True, "checked": checked, "first_bad": None}
 
     # ---- published (read-only, link-only) timetables ----
     @staticmethod

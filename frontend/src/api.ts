@@ -225,3 +225,22 @@ export function publicPdfUrl(token: string, kind?: string, id?: string): string 
   return `${API_BASE}/public/${token}/export.pdf${q.toString() ? "?" + q : ""}`;
 }
 export const publicXlsxUrl = (token: string) => `${API_BASE}/public/${token}/export.xlsx`;
+
+// ---- the activity log (shared mode) ----
+export interface AuditEntry {
+  seq: number; at: string; actor: string; action: string; institution_id: string | null; institution: string | null;
+  summary: string; detail: Record<string, unknown>; ip: string | null;
+}
+export interface AuditFilter { user?: string; action?: string; q?: string; since?: string; until?: string; institution?: string }
+const auditQuery = (f: AuditFilter, extra: Record<string, string | number | undefined> = {}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries({ ...f, ...extra })) if (v !== undefined && v !== "") qs.set(k, String(v));
+  const s = qs.toString();
+  return s ? "?" + s : "";
+};
+/** `iid` set: one institution's log (owners and administrators); omitted: the whole log (administrators). */
+export const listAudit = (f: AuditFilter, before?: number, iid?: string) =>
+  request<AuditEntry[]>(`${iid ? `/institutions/${iid}` : ""}/audit${auditQuery(iid ? { ...f, institution: undefined } : f, { before, limit: 50 })}`);
+export const auditCsvUrl = (f: AuditFilter, iid?: string) =>
+  `${API_BASE}${iid ? `/institutions/${iid}` : ""}/audit.csv${auditQuery(iid ? { ...f, institution: undefined } : f)}`;
+export const verifyAudit = () => request<{ ok: boolean; checked: number; first_bad: number | null }>("/audit/verify");
