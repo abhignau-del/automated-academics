@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.11.0 (2026-10-21)
 
 An activity log. Existing data, workbooks and databases keep working; databases gain an `audit` table in place, and the log needs shared mode (sign-in).
 
