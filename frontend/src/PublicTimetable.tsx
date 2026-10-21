@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import * as api from "./api";
-import type { PublicMeta, PublicSession } from "./api";
+import type { PublicMeta, PublicSession, RemovedSession } from "./api";
 import { assignLanes, courseColour, sessionKey } from "./timetable";
 import { range, sideTimes } from "./times";
 import type { Placement } from "./types";
@@ -23,6 +23,8 @@ export function parsePublicHash(hash: string): { token: string; kind?: Kind; id?
 const asPlacement = (s: PublicSession): Placement => ({
   offering_id: s.offering_id, session_index: s.session_index, day: s.day, start: s.start, length: s.length, room_id: s.room_name,
 });
+
+const NEW_BADGE = "New or moved";
 
 function lines(kind: Kind, s: PublicSession): string[] {
   return kind === "batch" ? [s.faculty_name, s.room_name] : kind === "faculty" ? [s.batch_ids.join(", "), s.room_name] : [s.faculty_name, s.batch_ids.join(", ")];
@@ -60,8 +62,9 @@ function Week({ meta, kind, sessions, clock }: { meta: PublicMeta; kind: Kind; s
             return (
               <div key={key} className="card" style={{
                 top: s.start * ROW_H, height: s.length * ROW_H - 2, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)`,
-                background: courseColour(s.course_code), cursor: "default",
+                background: courseColour(s.course_code), cursor: "default", outline: s.changed ? "3px solid #d9a400" : undefined,
               }} title={`${s.course_name}\n${lines(kind, s).join(" · ")}`}>
+                {s.changed && <small className="cardtime">{NEW_BADGE}</small>}
                 <strong>{s.course_code}</strong>
                 <span>{s.course_name}</span>
                 {lines(kind, s).map((l, i) => <em key={i}>{l}</em>)}
@@ -88,6 +91,7 @@ function Agenda({ meta, kind, sessions }: { meta: PublicMeta; kind: Kind; sessio
             {d.rows.map((s) => (
               <li key={sessionKey(s)} style={{ borderLeftColor: courseColour(s.course_code) }}>
                 <b>{s.time ?? `Lecture ${s.start + 1}${s.length > 1 ? `–${s.start + s.length}` : ""}`}</b>
+                {s.changed && <span className="changedtag"> {NEW_BADGE}</span>}
                 {s.time && <span className="muted"> · lecture {s.start + 1}{s.length > 1 ? `–${s.start + s.length}` : ""}</span>}
                 <div>{s.course_name}</div>
                 <div className="muted small">{lines(kind, s).join(" · ")}</div>
@@ -108,6 +112,8 @@ export function PublicTimetable({ token }: { token: string }) {
   const [id, setId] = useState<string | null>(start?.id ?? null);
   const [filter, setFilter] = useState("");
   const [sessions, setSessions] = useState<PublicSession[] | null>(null);
+  const [removed, setRemoved] = useState<RemovedSession[]>([]);
+  const [copied, setCopied] = useState(false);
   const [layout, setLayout] = useState<"week" | "list">(window.innerWidth < 720 ? "list" : "week");
 
   useEffect(() => {
@@ -130,7 +136,7 @@ export function PublicTimetable({ token }: { token: string }) {
     if (!kind || !id) { setSessions(null); return; }
     let alive = true;
     setSessions(null);
-    api.publicView(token, kind, id).then((v) => { if (alive) setSessions(v.sessions); }).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
+    api.publicView(token, kind, id).then((v) => { if (alive) { setSessions(v.sessions); setRemoved(v.removed ?? []); } }).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
     // a link to exactly this class, to bookmark or send on
     window.history.replaceState(null, "", `#/p/${token}/${kind}/${encodeURIComponent(id)}`);
     return () => { alive = false; };
@@ -173,6 +179,22 @@ export function PublicTimetable({ token }: { token: string }) {
           </div>
         </div>
 
+        {meta.update && (
+          <div className="alert note" role="status">
+            <div>
+              <b>Timetable updated {new Date(meta.update.at).toLocaleDateString()}.</b>
+              {meta.update.note && <> {meta.update.note}{/[.!?]$/.test(meta.update.note) ? "" : "."}</>}
+              {sessions && (sessions.some((s) => s.changed) || removed.length > 0
+                ? <> For this {KIND_LABEL[kind].toLowerCase()}: {sessions.filter((s) => s.changed).length} new or moved (marked), {removed.length} no longer scheduled.</>
+                : <> Nothing changed for this {KIND_LABEL[kind].toLowerCase()}.</>)}
+              {removed.length > 0 && (
+                <ul className="removedlist">
+                  {removed.map((r, i) => <li key={i}>No longer: {r.course_name}, {r.day_name} {r.time ?? `lecture ${r.start + 1}`}</li>)}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
         {sessions === null ? <p className="muted">Loading…</p>
           : layout === "week" ? <Week meta={meta} kind={kind} sessions={sessions} clock={clock} />
           : <Agenda meta={meta} kind={kind} sessions={sessions} />}
@@ -183,6 +205,17 @@ export function PublicTimetable({ token }: { token: string }) {
           {meta.everything && <a className="btn" href={api.publicPdfUrl(token)}>PDF: everything</a>}
           {meta.everything && <a className="btn" href={api.publicXlsxUrl(token)}>Excel workbook</a>}
         </p>
+        {meta.calendar_feed && id && (
+          <p className="downloads" aria-label="calendar">
+            <b>Calendar:</b>
+            <a className="btn" href={api.publicCalendarUrl(token, kind, id, true)} title="Opens your calendar app and keeps it up to date">Add to my calendar</a>
+            <a className="btn" href={api.publicCalendarUrl(token, kind, id)} download="timetable.ics">Download .ics file</a>
+            <button className="btn" title="For Google Calendar: Other calendars, From URL"
+              onClick={() => { void navigator.clipboard?.writeText(api.publicCalendarUrl(token, kind, id)).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
+              {copied ? "Copied" : "Copy calendar address"}
+            </button>
+          </p>
+        )}
         <p className="muted small">
           Published {new Date(meta.published_at).toLocaleDateString()}
           {meta.expires_at ? ` · available until ${new Date(meta.expires_at).toLocaleDateString()}` : ""}. Made with Automated Academics.

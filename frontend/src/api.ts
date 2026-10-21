@@ -198,11 +198,13 @@ export interface Publication {
   id: string; job_id: string; label: string; kinds: ("batch" | "faculty" | "room")[]; token: string;
   path: string; // "/#/p/<token>": append to the site's address
   created_at: string; expires_at: string | null; expired: boolean;
+  term_start: string | null; term_end: string | null; // first and last day of the term (YYYY-MM-DD): lets students add the timetable to a calendar
+  note: string; updated_at: string | null; times_set: boolean; // times_set: the institution has lecture times, which a calendar file needs
 }
 export const listPublications = (iid: string) => request<Publication[]>(`/institutions/${iid}/publications`);
-export const publish = (iid: string, body: { job_id?: string; label?: string; kinds: Publication["kinds"]; expires_days?: number | null }) =>
+export const publish = (iid: string, body: { job_id?: string; label?: string; kinds: Publication["kinds"]; expires_days?: number | null; term_start?: string | null; term_end?: string | null }) =>
   request<Publication>(`/institutions/${iid}/publications`, json("POST", body));
-export const changePublication = (iid: string, pid: string, body: { job_id?: string; label?: string; kinds?: Publication["kinds"]; expires_days?: number | null }) =>
+export const changePublication = (iid: string, pid: string, body: { job_id?: string; label?: string; kinds?: Publication["kinds"]; expires_days?: number | null; term_start?: string | null; term_end?: string | null; note?: string }) =>
   request<Publication>(`/institutions/${iid}/publications/${pid}`, json("PATCH", body));
 export const revokePublication = (iid: string, pid: string) => request<void>(`/institutions/${iid}/publications/${pid}`, { method: "DELETE" });
 
@@ -212,14 +214,25 @@ export interface PublicMeta {
   calendar: Calendar;
   entities: Partial<Record<Publication["kinds"][number], { id: string; label: string; clock?: string | null }[]>>;
   everything: boolean;
+  calendar_feed: boolean; // the publisher gave term dates and the institution has lecture times
+  update: { at: string; note: string; moved: number; added: number; removed: number } | null; // set for two weeks after a newer timetable replaced the old
 }
 export interface PublicSession {
   offering_id: string; session_index: number; course_code: string; course_name: string; faculty_id: string; faculty_name: string;
   batch_ids: string[]; room_id: string; room_name: string; day: number; day_name: string; start: number; length: number; time: string | null;
+  changed?: boolean; // new or moved since the previous version (only while an update notice is showing)
 }
+export interface RemovedSession { course_code: string; course_name: string; day_name: string; time: string | null; start: number; length: number }
 export const publicMeta = (token: string) => request<PublicMeta>(`/public/${token}`);
 export const publicView = (token: string, kind: string, id: string) =>
-  request<{ kind: string; id: string; sessions: PublicSession[] }>(`/public/${token}/views/${kind}/${encodeURIComponent(id)}`);
+  request<{ kind: string; id: string; sessions: PublicSession[]; removed: RemovedSession[] }>(`/public/${token}/views/${kind}/${encodeURIComponent(id)}`);
+/** The calendar file's address, absolute so a calendar app can subscribe to it (`webcal` swaps the scheme for "subscribe"). */
+export function publicCalendarUrl(token: string, kind: string, id: string, webcal = false): string {
+  const url = new URL(`${API_BASE}/public/${token}/calendar.ics`, window.location.href);
+  url.searchParams.set("kind", kind);
+  url.searchParams.set("id", id);
+  return webcal ? url.href.replace(/^https?:/, "webcal:") : url.href;
+}
 export function publicPdfUrl(token: string, kind?: string, id?: string): string {
   const q = new URLSearchParams();
   if (kind) q.set("kind", kind);

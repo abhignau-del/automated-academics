@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Calendar files and "what changed" on published links.** A link can carry the term's first and last day; with lecture times set, the
+  page then offers *Add to my calendar* (subscribe), a downloadable `.ics` file and a copyable address for the class, teacher or
+  room on screen: weekly repeating events at the class's own clock times, with stable event ids so a subscribed calendar updates
+  instead of duplicating. Pointing a link at a newer timetable (with an optional note) now shows students, for two weeks, that it
+  was updated, marks the new or moved lectures of the class they are viewing, lists any that are gone and tells an unchanged class
+  so. Databases gain `term_start`, `term_end`, `prev_job_id`, `updated_at` and `note` on `publications` in place.
 - **Two new goals: stay in one room, avoid early and late lectures.** `room_changes` penalises each classroom a class uses for its theory
   lectures beyond the first (labs and halls don't count); `odd_hours` penalises class lectures in the first or last slots of the day
   (the calendar says how many of each, one by default). Both are off until weighted (Data → Settings), so existing institutions

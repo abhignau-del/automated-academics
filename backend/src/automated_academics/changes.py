@@ -80,3 +80,11 @@ def describe_timetable_edit(old: Timetable | None, new: Timetable) -> tuple[str,
         bits.append(f"removed {len(removed)}")
     return ", ".join(bits), {"moved": len(moved), "added": len(added), "removed": len(removed),
                              "offerings": sorted(set(moved + added + removed))[:_CAP]}
+
+
+def timetable_delta(old: Timetable, new: Timetable) -> dict[str, set[tuple[str, int]]]:
+    """Which sessions were moved (different day, time or room), newly added, or taken away between two timetables."""
+    key = lambda p: (p.offering_id, p.session_index)  # noqa: E731
+    a = {key(p): p for p in old.placements}
+    b = {key(p): p for p in new.placements}
+    return {"moved": {k for k in set(a) & set(b) if a[k] != b[k]}, "added": set(b) - set(a), "removed": set(a) - set(b)}

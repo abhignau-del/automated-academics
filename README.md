@@ -145,6 +145,17 @@ docker compose up -d        # then open http://localhost:8000
    *Show the current timetable*; *Withdraw* ends it at once. Publishing needs shared mode (sign-in), since the link has to be
    reachable by others, and the link itself is the secret: anyone who is given it can open it, and class timetables show each
    subject's teacher and room.
+
+   *Calendars.* Give a link the first and last day of the term (and set lecture times under Data → Settings) and the page offers
+   **Add to my calendar**, **Download .ics file** and **Copy calendar address** for the class on screen: one event per session,
+   repeating every week of the term, at the class's own clock times. The address keeps working, so a phone calendar that
+   subscribes to it picks up later changes (events keep their identity, so they are updated rather than duplicated; calendar apps
+   typically refresh every few hours). Holidays are not known to the app, so every week of the term is shown.
+
+   *What changed.* When you choose **Show the current timetable** on a link (optionally with a short note for students), the page
+   shows for two weeks "Timetable updated on ...", marks the lectures that are new or moved for the class being viewed and lists
+   any that are no longer scheduled; a class that didn't change is told so. Edits you save to the timetable a link already shows
+   change what students see but are not announced; point the link at a new timetable to announce a change.
 6. If two people edit the same institution, the second save is **refused** instead of overwriting the first, with
    an offer to load the other version.
 7. **Activity log.** Shared mode keeps a record of who did what: sign-ins (and failed attempts, with the name typed and the
@@ -472,7 +483,7 @@ font such as Noto Sans.
 - [x] Activity log (tamper-evident, per institution and for administrators)
 - [x] Password reset by e-mail (optional, needs a mail server)
 - [ ] Single sign-on
-- [x] Browser tests in CI (twelve journeys driving the real app)
+- [x] Browser tests in CI (thirteen journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [x] Goals for keeping a class in one classroom and avoiding early or late lectures (off by default)
@@ -487,7 +498,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (twelve so far, about 180 checks). Each one starts its own copy of the app with an empty data folder.
+so on (thirteen so far, about 190 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

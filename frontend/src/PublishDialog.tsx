@@ -26,6 +26,10 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
   const [kinds, setKinds] = useState<Kind[]>(["batch"]);
   const [days, setDays] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [termStart, setTermStart] = useState("");
+  const [termEnd, setTermEnd] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const term = termStart && termEnd ? { term_start: termStart, term_end: termEnd } : {};
 
   const load = useCallback(() => api.listPublications(iid).then(setLinks).catch((e) => setError(message(e))), [iid]);
   useEffect(() => { void load(); }, [load]);
@@ -59,6 +63,19 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
                       {new Date(p.created_at).toLocaleDateString()}
                       {p.expires_at ? ` · ${p.expired ? "expired" : "until"} ${new Date(p.expires_at).toLocaleDateString()}` : " · no expiry"}
                     </small>
+                    <div className="termrow">
+                      <label className="inline">Term from
+                        <input type="date" aria-label={`term start of ${p.label || p.id}`} defaultValue={p.term_start ?? ""} key={"s" + p.id + p.term_start}
+                          onBlur={(e) => { if (e.target.value !== (p.term_start ?? "") && (e.target.value && p.term_end || !e.target.value && !p.term_end)) void run(() => api.changePublication(iid, p.id, { term_start: e.target.value || null, term_end: p.term_end })); }} />
+                      </label>
+                      <label className="inline">to
+                        <input type="date" aria-label={`term end of ${p.label || p.id}`} defaultValue={p.term_end ?? ""} key={"e" + p.id + p.term_end}
+                          onBlur={(e) => { if (e.target.value !== (p.term_end ?? "") && (e.target.value && p.term_start || !e.target.value && !p.term_start)) void run(() => api.changePublication(iid, p.id, { term_start: p.term_start, term_end: e.target.value || null })); }} />
+                      </label>
+                      <small className="muted">
+                        {!p.term_start ? "Set the term to offer students a calendar file." : p.times_set ? "Students can add it to their calendar." : "Set lecture times (Data → Settings) to offer a calendar file."}
+                      </small>
+                    </div>
                     <div className="linkrow">
                       <input readOnly value={linkOf(p)} aria-label={`link ${p.label || p.id}`} onFocus={(e) => e.target.select()} />
                       <button className="btn small" onClick={() => copy(p)}>{copied === p.id ? "Copied" : "Copy"}</button>
@@ -69,8 +86,16 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
                     {p.job_id !== jobId && <div className="muted small">an older timetable</div>}
                   </td>
                   <td className="rowactions">
-                    {p.job_id !== jobId && <button className="btn small" onClick={() => run(() => api.changePublication(iid, p.id, { job_id: jobId }))}
-                      title="Make this link show the timetable on screen now">Show the current timetable</button>}
+                    {p.job_id !== jobId && (
+                      <>
+                        <input placeholder="note for students (optional)" aria-label={`note for ${p.label || p.id}`} size={24} maxLength={200}
+                          value={notes[p.id] ?? ""} onChange={(e) => setNotes({ ...notes, [p.id]: e.target.value })} />
+                        <button className="btn small" onClick={() => run(async () => {
+                          await api.changePublication(iid, p.id, { job_id: jobId, ...(notes[p.id]?.trim() ? { note: notes[p.id].trim() } : {}) });
+                          setNotes({ ...notes, [p.id]: "" });
+                        })} title="Make this link show the timetable on screen now. Students see what changed.">Show the current timetable</button>
+                      </>
+                    )}
                     <button className="btn small danger" onClick={() => { if (confirm("Withdraw this link? Anyone who has it will no longer be able to open it.")) void run(() => api.revokePublication(iid, p.id)); }}>
                       Withdraw
                     </button>
@@ -99,11 +124,16 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
               {EXPIRY.map((x) => <option key={x.label} value={String(x.days)}>{x.label}</option>)}
             </select>
           </label>
-          <button className="btn primary" disabled={kinds.length === 0}
-            onClick={() => run(async () => { await api.publish(iid, { job_id: jobId, label, kinds, expires_days: days }); setLabel(""); })}>
+          <label className="inline">Term from
+            <input type="date" aria-label="term start" value={termStart} onChange={(e) => setTermStart(e.target.value)} /></label>
+          <label className="inline">to
+            <input type="date" aria-label="term end" value={termEnd} onChange={(e) => setTermEnd(e.target.value)} /></label>
+          <button className="btn primary" disabled={kinds.length === 0 || (!!termStart !== !!termEnd) || (!!termStart && termEnd < termStart)}
+            onClick={() => run(async () => { await api.publish(iid, { job_id: jobId, label, kinds, expires_days: days, ...term }); setLabel(""); })}>
             Create link
           </button>
         </div>
+        <p className="muted small">Give the first and last day of the term and students can add their timetable to a phone or computer calendar; it repeats every week of the term (holidays aren't known to the app), and updates when you point the link at a newer timetable.</p>
         <p className="muted small">The link shows the timetable as it is now, including changes you save to it later. It does not follow a newly generated timetable until you choose “Show the current timetable”.</p>
 
         <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>

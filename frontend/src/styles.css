@@ -244,3 +244,8 @@ fieldset.settings { border: 0; padding: 0; margin: 0; min-width: 0; }
 .check.block { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; }
 
 .linklike { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
+
+.changedtag { color: #8a5d00; font-weight: 600; font-size: 12px; }
+.removedlist { margin: 6px 0 0 18px; padding: 0; }
+.termrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.termrow input[type=date] { font: inherit; }
