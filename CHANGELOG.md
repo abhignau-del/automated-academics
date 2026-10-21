@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.12.0 (2026-10-21)
+
+Password reset by e-mail, room and time-of-day goals, and calendar files for published links. Existing data, workbooks and databases keep working; databases gain `users.email`, a `password_resets` table, new `publications` columns and the goals' settings in place. The new goals are off until weighted, and password reset is off until a mail server is configured.
 
 - **Calendar files and "what changed" on published links.** A link can carry the term's first and last day; with lecture times set, the
   page then offers *Add to my calendar* (subscribe), a downloadable `.ics` file and a copyable address for the class, teacher or
