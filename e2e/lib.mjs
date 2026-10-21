@@ -28,13 +28,13 @@ async function freePort() {
 }
 
 /** Start the app on a free port with its own empty data folder. `auth` switches on sign-in (shared mode). */
-export async function startApp({ auth = false } = {}) {
+export async function startApp({ auth = false, extraEnv = null } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), "aa-e2e-"));
   const port = await freePort();
   const python = process.env.E2E_PYTHON || "python";
   const child = spawn(python, ["-m", "automated_academics.desktop", "--no-browser", "--port", String(port)], {
     cwd: path.join(ROOT, "backend"),
-    env: { ...process.env, AA_HOME: home, AA_DB: "", AA_AUTH: auth ? "1" : "" },
+    env: { ...process.env, AA_HOME: home, AA_DB: "", AA_AUTH: auth ? "1" : "", ...(extraEnv ? extraEnv(port) : {}) },
     stdio: ["ignore", "ignore", "pipe"],
   });
   let err = "";
@@ -117,4 +117,32 @@ export async function until(fn, { timeout = 120000, every = 500 } = {}) {
     if (Date.now() > end) throw new Error("timed out waiting");
     await new Promise((r) => setTimeout(r, every));
   }
+}
+
+/** A tiny mail server that only listens: it keeps every message it is given, so a journey can read the e-mail the app sent. */
+export async function startMailSink() {
+  const messages = [];
+  const server = net.createServer((sock) => {
+    let data = "", inData = false, buf = "";
+    const say = (t) => sock.write(t + "\r\n");
+    say("220 sink ready");
+    sock.on("data", (chunk) => {
+      buf += chunk.toString("utf8");
+      let i;
+      while ((i = buf.indexOf("\r\n")) >= 0) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        if (inData) {
+          if (line === ".") { inData = false; messages.push(data); data = ""; say("250 queued"); }
+          else data += line.replace(/^\.\./, ".") + "\n";
+        } else if (/^(EHLO|HELO)/i.test(line)) say("250 sink");
+        else if (/^DATA/i.test(line)) { inData = true; say("354 go on"); }
+        else if (/^QUIT/i.test(line)) { say("221 bye"); sock.end(); }
+        else say("250 ok");
+      }
+    });
+    sock.on("error", () => {});
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { port: server.address().port, messages, stop: () => server.close() };
 }

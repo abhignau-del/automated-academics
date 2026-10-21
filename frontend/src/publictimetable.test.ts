@@ -15,3 +15,16 @@ describe("published link addresses", () => {
     }
   });
 });
+
+import { parseResetHash } from "./auth";
+
+describe("password-reset link addresses", () => {
+  it("reads the token and ignores everything else", () => {
+    const t = "A1b2C3d4E5f6G7h8I9j0K-L_mnop";
+    expect(parseResetHash(`#/reset/${t}`)).toBe(t);
+    expect(parseResetHash("#/reset/short")).toBeNull();
+    expect(parseResetHash(`#/reset/${t}/extra`)).toBeNull();
+    expect(parseResetHash(`#/p/${t}`)).toBeNull();
+    expect(parseResetHash("")).toBeNull();
+  });
+});

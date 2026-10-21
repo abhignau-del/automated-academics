@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Forgot your password? (optional, shared mode).** With a mail server configured (`AA_SMTP_HOST`, `AA_SMTP_FROM`, `AA_PUBLIC_URL`, see the README),
+  the sign-in screen offers a reset by e-mail: a one-use link that lasts an hour, replaced by any newer request, ending every sign-in of
+  that person. The answer never reveals whether an account exists, requests and wrong links are throttled, only a hash of the link is
+  stored, and the activity log records the request and the reset without any secret. Accounts get an **E-mail** column in People…
+  (unique, lower-cased). Databases gain `users.email` and a `password_resets` table in place. Without the settings nothing changes.
+
 ## v0.11.0 (2026-10-21)
 
 An activity log. Existing data, workbooks and databases keep working; databases gain an `audit` table in place, and the log needs shared mode (sign-in).

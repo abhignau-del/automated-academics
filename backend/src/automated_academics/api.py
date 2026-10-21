@@ -43,6 +43,7 @@ from .quality import measure, score
 from .validate import find_conflict_details
 from .views import entities, session_views
 from .grid_io import GridError, GridOptions, import_grid
+from .mail import Mailer, SmtpMailer, normalise_email, reset_message
 from .scope import institution_violations, timetable_violations
 from .changes import describe_changes, describe_timetable_edit
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
@@ -124,7 +125,7 @@ def _report(inst: Institution, tt: Timetable) -> ConflictReport:
 
 
 _RANK = {"viewer": 1, "editor": 2, "owner": 3}
-_PUBLIC = {"/health", "/auth/status", "/auth/login", "/auth/setup"}
+_PUBLIC = {"/health", "/auth/status", "/auth/login", "/auth/setup", "/auth/forgot", "/auth/reset"}
 _PUBLIC_PREFIX = "/public/"  # published, link-only timetables: no account needed
 # what every answer about a published timetable says: don't keep it, don't index it, don't pass the address on
 _PUBLIC_HEADERS = {"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
@@ -141,11 +142,22 @@ class NewUser(BaseModel):
     username: str
     password: str
     display_name: str = ""
+    email: str = ""
     role: Literal["admin", "member"] = "member"
+
+
+class ForgotIn(BaseModel):
+    who: str = Field(max_length=254)  # a username or an e-mail address
+
+
+class ResetIn(BaseModel):
+    token: str = Field(max_length=200)
+    new: str
 
 
 class UserChanges(BaseModel):
     display_name: str | None = None
+    email: str | None = None
     password: str | None = None
     role: Literal["admin", "member"] | None = None
     disabled: bool | None = None
@@ -179,8 +191,12 @@ class MemberRole(BaseModel):
 _CSV_ROWS = 50_000  # most rows one CSV download holds
 
 
+RESET_MINUTES = 60
+
+
 def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None,
-               static_dir: str | None = None, auth: bool | None = None) -> FastAPI:
+               static_dir: str | None = None, auth: bool | None = None, mailer: Mailer | None = None,
+               public_url: str | None = None) -> FastAPI:
     """`auth` switches on accounts (default: the AA_AUTH environment variable). Off, everyone is one local
     administrator, which is how the single-user desktop app works."""
     store = Store(db_path or os.environ.get("AA_DB", "automated_academics.db"))
@@ -188,6 +204,12 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     secure_cookie = os.environ.get("AA_COOKIE_SECURE", "") not in ("", "0")
     throttle = authlib.LoginThrottle()
     bad_links = authlib.LoginThrottle(limit=30, lock_s=60.0)  # slows down anyone guessing published-link addresses
+    forgot_throttle = authlib.LoginThrottle(limit=5, lock_s=600.0)  # a few reset e-mails per address, then a pause
+    bad_resets = authlib.LoginThrottle(limit=10, lock_s=300.0)  # guessing reset links
+    mailer = mailer if mailer is not None else SmtpMailer.from_env()
+    public_url = (public_url or os.environ.get("AA_PUBLIC_URL", "")).strip().rstrip("/")
+    reset_on = auth_on and mailer is not None and bool(public_url)  # no mail server or no known address: no "forgot password"
+    mail_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mail")  # sending is slow and must not show who has an account
 
     def session_user(request: Request) -> User | None:
         token = request.cookies.get(SESSION_COOKIE)
@@ -222,6 +244,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             log.warning("marked %d unfinished job(s) as failed", n)
         yield
         pool.shutdown(wait=False, cancel_futures=True)
+        mail_pool.shutdown(wait=False, cancel_futures=True)
 
     app = FastAPI(title="Automated Academics", version=__version__, lifespan=lifespan,
                   dependencies=[Depends(login_required)])
@@ -656,7 +679,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         """What the screen needs before it can show anything: is sign-in on, is first-run setup needed, who am I."""
         user = request.state.user if auth_on else None
         return {"auth": auth_on, "setup_needed": auth_on and store.count_users() == 0,
-                "user": user.public() if user else None}
+                "user": user.public() if user else None, "reset_enabled": reset_on}
 
     @app.post("/auth/setup", status_code=201)
     def auth_setup(body: NewUser, request: Request, response: Response):
@@ -670,6 +693,16 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         audit(request, "auth.setup", "set up the first administrator account", actor=authlib.user_from_row(user))
         return authlib.user_from_row(user).public()
 
+    def _free_email(raw: str, mine: str | None = None) -> str:
+        try:
+            email = normalise_email(raw)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        other = store.get_user_by_email(email) if email else None
+        if other is not None and other["id"] != mine:
+            raise HTTPException(409, "another account already uses that e-mail address")
+        return email
+
     def _create_user(body: NewUser) -> dict:
         try:
             name = authlib.normalise_username(body.username)
@@ -678,8 +711,60 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(422, str(e)) from None
         if store.get_user_by_name(name):
             raise HTTPException(409, "that username is taken")
-        uid = store.add_user(name, body.display_name.strip() or name, authlib.hash_password(body.password), body.role)
+        email = _free_email(body.email)
+        uid = store.add_user(name, body.display_name.strip() or name, authlib.hash_password(body.password), body.role, email)
         return store.get_user(uid)
+
+    def send_reset(row: dict) -> None:
+        token = authlib.new_token()
+        store.create_reset(row["id"], authlib.token_hash(token), RESET_MINUTES * 60)
+        subject, text = reset_message(row["display_name"], f"{public_url}/#/reset/{token}", RESET_MINUTES)
+        try:
+            mailer.send(row["email"], subject, text)  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001 - the person is told nothing either way; the administrator reads the log
+            log.exception("could not send a password-reset e-mail")
+
+    @app.post("/auth/forgot", status_code=202)
+    def forgot_password(body: ForgotIn, request: Request):
+        """Ask for an e-mail with a link to choose a new password. The answer is the same whoever (or nobody) the name matches."""
+        if not reset_on:
+            raise HTTPException(409, "password reset by e-mail is not switched on; ask your administrator to set a new password")
+        ip = request.client.host if request.client else ""
+        wait = forgot_throttle.wait_s(ip)
+        if wait > 0:
+            raise HTTPException(429, f"too many requests; try again in {int(wait) + 1} seconds")
+        forgot_throttle.failed(ip)  # counts every request, not only failures
+        who = body.who.strip().lower()
+        row = store.get_user_by_name(who) or (store.get_user_by_email(who) if "@" in who else None)
+        sendable = row is not None and not row["disabled"] and bool(row["email"]) and not store.recent_reset(row["id"], 60)
+        audit(request, "auth.reset_requested", "asked for a password-reset e-mail", actor=who[:80] or "(blank)",
+              detail={"known_user": row is not None, "sent": sendable})
+        if sendable:
+            mail_pool.submit(send_reset, row)
+        return {"ok": True, "message": "If that account has an e-mail address, a link to choose a new password is on its way."}
+
+    @app.post("/auth/reset")
+    def reset_password(body: ResetIn, request: Request):
+        """Choose a new password with the e-mailed link. The link works once and for an hour; it ends every sign-in of that person."""
+        if not reset_on:
+            raise HTTPException(409, "password reset by e-mail is not switched on")
+        ip = request.client.host if request.client else ""
+        wait = bad_resets.wait_s(ip)
+        if wait > 0:
+            raise HTTPException(429, f"too many wrong links; try again in {int(wait) + 1} seconds")
+        try:
+            authlib.check_password_strength(body.new)
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        uid = store.take_reset(authlib.token_hash(body.token))
+        row = store.get_user(uid) if uid else None
+        if row is None or row["disabled"]:
+            bad_resets.failed(ip)
+            raise HTTPException(400, "this link is not valid any more; ask for a new one")
+        store.update_user(uid, password_hash=authlib.hash_password(body.new))
+        store.delete_user_sessions(uid)
+        audit(request, "auth.password_reset", "chose a new password from an e-mailed link", actor=authlib.user_from_row(row))
+        return {"ok": True}
 
     @app.post("/auth/login")
     def login(body: Credentials, request: Request, response: Response):
@@ -741,7 +826,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
     @app.get("/users")
     def list_users(request: Request):
         admin_only(request)
-        return [{**authlib.user_from_row(u).public(), "disabled": bool(u["disabled"])} for u in store.list_users()]
+        return [{**authlib.user_from_row(u).public(), "disabled": bool(u["disabled"]), "email": u["email"]} for u in store.list_users()]
 
     @app.post("/users", status_code=201)
     def add_user(body: NewUser, request: Request):
@@ -759,6 +844,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         fields: dict[str, Any] = {}
         if body.display_name is not None:
             fields["display_name"] = body.display_name.strip() or row["username"]
+        if body.email is not None:
+            fields["email"] = _free_email(body.email, uid)
         if body.password is not None:
             try:
                 authlib.check_password_strength(body.password)
@@ -781,6 +868,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             said.append("renamed them")
         if "password_hash" in fields:
             said.append("reset their password")
+        if "email" in fields:
+            said.append("changed their e-mail address")
         if "role" in fields:
             said.append(f"made them {'an administrator' if fields['role'] == 'admin' else 'an ordinary member'}")
         if "disabled" in fields:

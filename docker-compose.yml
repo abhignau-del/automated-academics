@@ -9,6 +9,13 @@ services:
     environment:
       # Set to "1" once it is served over HTTPS (behind a reverse proxy), so the sign-in cookie is only sent securely.
       AA_COOKIE_SECURE: "0"
+      # Optional: "Forgot your password?" by e-mail. Needs all of: a mail server, a sender and the address people use to reach the app.
+      # AA_SMTP_HOST: "smtp.example.edu"
+      # AA_SMTP_PORT: "587"
+      # AA_SMTP_USER: "timetable@example.edu"
+      # AA_SMTP_PASSWORD: "..."
+      # AA_SMTP_FROM: "timetable@example.edu"
+      # AA_PUBLIC_URL: "https://timetable.example.edu"
     restart: unless-stopped
 
 volumes:

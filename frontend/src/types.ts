@@ -93,8 +93,8 @@ export interface CheckResult { valid: boolean; issues: DataIssue[] }
 // ---- accounts (shared mode) ----
 
 export interface AuthUser { id: string; username: string; display_name: string; role: "admin" | "member" }
-export interface AuthStatus { auth: boolean; setup_needed: boolean; user: AuthUser | null }
-export interface UserRow extends AuthUser { disabled: boolean }
+export interface AuthStatus { auth: boolean; setup_needed: boolean; user: AuthUser | null; reset_enabled?: boolean }
+export interface UserRow extends AuthUser { disabled: boolean; email: string }
 export interface Member {
   id: string; username: string; display_name: string; role: "owner" | "editor" | "viewer";
   departments: string[] | null;

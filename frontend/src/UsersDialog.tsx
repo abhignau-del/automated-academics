@@ -40,12 +40,16 @@ export function UsersDialog({ me, onClose }: { me: string; onClose: () => void }
         {error && <div className="alert" role="alert">{error}<button onClick={() => setError(null)}>×</button></div>}
 
         <table className="issues userstable">
-          <thead><tr><th>Username</th><th>Name</th><th>Role</th><th /></tr></thead>
+          <thead><tr><th>Username</th><th>Name</th><th>E-mail</th><th>Role</th><th /></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id} className={u.disabled ? "off" : ""}>
                 <td>{u.username}{u.id === me && " (you)"}{u.disabled && <small> · disabled</small>}</td>
                 <td>{u.display_name}</td>
+                <td>
+                  <input defaultValue={u.email} key={u.id + u.email} aria-label={`e-mail of ${u.username}`} placeholder="none" size={22}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== u.email) void run(() => api.patchUser(u.id, { email: v })); }} />
+                </td>
                 <td>
                   <select value={u.role} aria-label={`role of ${u.username}`}
                     onChange={(e) => run(() => api.patchUser(u.id, { role: e.target.value as "admin" | "member" }))}>

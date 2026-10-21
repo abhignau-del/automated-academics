@@ -149,6 +149,21 @@ docker compose up -d        # then open http://localhost:8000
    app's back. It never stores passwords, sign-in tokens or link addresses, and people opening a published link are not logged.
    If the log cannot be written the action still goes ahead (and the error is logged). There is no deletion and no automatic
    clean-up: the table grows by a few hundred bytes per action. Nothing is recorded with sign-in off (single user).
+8. **Forgotten passwords, by e-mail.** Give the server a mail account and the sign-in screen gains **Forgot your password?**. The
+   person types their username or e-mail address; if the account has an address (an administrator fills it in the **E-mail**
+   column of **People…**), a link arrives that opens a "choose a new password" page. The link works once and for an hour, a newer
+   request replaces an older one, and using it signs that person out everywhere. The screen gives the same answer whether or not
+   the account exists, a request is limited to a few per address, and only a hash of the link is stored. Switch it on with
+   environment variables (without them nothing changes and an administrator sets passwords by hand):
+
+   | Variable | Meaning |
+   |---|---|
+   | `AA_SMTP_HOST` | the mail server (this switches the feature on) |
+   | `AA_SMTP_PORT` | default 587 (465 with `ssl`) |
+   | `AA_SMTP_SECURITY` | `starttls` (default), `ssl` or `none` |
+   | `AA_SMTP_USER`, `AA_SMTP_PASSWORD` | the mail login, if it needs one |
+   | `AA_SMTP_FROM` | the sender address (default: `AA_SMTP_USER`) |
+   | `AA_PUBLIC_URL` | the address people use to reach the app, e.g. `https://timetable.college.edu`. Required: links are never built from the request, so a forged `Host` header cannot redirect them |
 
 Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
 automated_academics.api:create_app --factory --port 8000` (build the screen first with `npm run build:app` in
@@ -157,7 +172,7 @@ sign-in cookie is sent only securely. Back up the one data file (`/data/automate
 
 What this does and does not do: passwords are stored as salted hashes and a sign-in is a random token kept in an
 HttpOnly cookie; guessing passwords is slowed down; every request is checked on the server. There is **no password
-reset by email** (an administrator sets a new one) and no single sign-on (SAML/OIDC). Run **one** server process: jobs and throttling live in that process
+reset by email** unless you configure a mail server as above (otherwise an administrator sets a new password), and no single sign-on (SAML/OIDC). Run **one** server process: jobs and throttling live in that process
 and the data is a single SQLite file, which suits tens of people rather than thousands. The Docker image is built
 and smoke-tested by CI; the sign-in, sharing and conflict behaviour is covered by automated API tests and a browser test.
 
@@ -447,8 +462,9 @@ font such as Noto Sans.
 - [x] Editors limited to some departments
 - [x] Read-only publishing links
 - [x] Activity log (tamper-evident, per institution and for administrators)
-- [ ] Single sign-on, password reset by email
-- [x] Browser tests in CI (ten journeys driving the real app)
+- [x] Password reset by e-mail (optional, needs a mail server)
+- [ ] Single sign-on
+- [x] Browser tests in CI (eleven journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [ ] Further goals: room preferences, lectures at sensible times of day, consecutive-day spacing
@@ -462,7 +478,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (ten so far, about 155 checks). Each one starts its own copy of the app with an empty data folder.
+so on (eleven so far, about 170 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

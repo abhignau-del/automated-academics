@@ -31,7 +31,8 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function LoginForm({ onDone }: { onDone: () => void }) {
+function LoginForm({ onDone, canReset }: { onDone: () => void; canReset: boolean }) {
+  const [forgot, setForgot] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +43,7 @@ function LoginForm({ onDone }: { onDone: () => void }) {
     try { await api.login(username, password); onDone(); }
     catch (err) { setError(message(err)); setBusy(false); }
   }
+  if (forgot) return <ForgotForm onBack={() => setForgot(false)} />;
   return (
     <Card title="Sign in">
       <form onSubmit={submit}>
@@ -49,11 +51,83 @@ function LoginForm({ onDone }: { onDone: () => void }) {
         <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></label>
         {error && <div className="alert" role="alert">{error}</div>}
         <button className="btn primary" disabled={busy || !username || !password}>{busy ? "Signing in…" : "Sign in"}</button>
-        <p className="muted small">Forgotten your password? Ask your administrator to set a new one.</p>
+        {canReset
+          ? <p className="small"><button type="button" className="linklike" onClick={() => setForgot(true)}>Forgot your password?</button></p>
+          : <p className="muted small">Forgotten your password? Ask your administrator to set a new one.</p>}
       </form>
     </Card>
   );
 }
+
+function ForgotForm({ onBack }: { onBack: () => void }) {
+  const [who, setWho] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try { setAnswer((await api.forgotPassword(who)).message); }
+    catch (err) { setError(message(err)); }
+    setBusy(false);
+  }
+  return (
+    <Card title="Forgot your password?">
+      {answer ? (
+        <>
+          <p role="status">{answer}</p>
+          <p className="muted small">The link works once and for an hour. Nothing arrived? Check your spam folder, or ask your administrator, who can also set a new password for you.</p>
+          <button className="btn" onClick={onBack}>Back to sign in</button>
+        </>
+      ) : (
+        <form onSubmit={submit}>
+          <p className="muted small">Type your username or e-mail address. If the account has an e-mail address, we'll send a link to choose a new password.</p>
+          <label>Username or e-mail<input value={who} onChange={(e) => setWho(e.target.value)} autoFocus autoComplete="username" /></label>
+          {error && <div className="alert" role="alert">{error}</div>}
+          <button className="btn primary" disabled={busy || !who.trim()}>{busy ? "Sending…" : "Send the link"}</button>{" "}
+          <button type="button" className="btn" onClick={onBack}>Back</button>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+/** The page the e-mailed link opens: choose a new password, once. */
+export function ResetPage({ token }: { token: string }) {
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => { history.replaceState(null, "", window.location.pathname); }, []); // the secret is not left in the address bar
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try { await api.resetPassword(token, next); setDone(true); }
+    catch (err) { setError(message(err)); }
+  }
+  return (
+    <Card title="Choose a new password">
+      {done ? (
+        <>
+          <p role="status">Your password was changed and you were signed out everywhere. Sign in with the new one.</p>
+          <button className="btn primary" onClick={() => window.location.reload()}>Go to sign in</button>
+        </>
+      ) : (
+        <form onSubmit={submit}>
+          <label>New password<input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" autoFocus /></label>
+          <label>New password again<input type="password" value={again} onChange={(e) => setAgain(e.target.value)} autoComplete="new-password" /></label>
+          {again !== "" && again !== next && <p className="setting-note error">The two passwords differ.</p>}
+          {error && <div className="alert" role="alert">{error}</div>}
+          <button className="btn primary" disabled={next.length < 8 || next !== again}>Change password</button>
+          <p className="muted small">At least 8 characters. The link works once.</p>
+        </form>
+      )}
+    </Card>
+  );
+}
+
+/** "#/reset/<token>" from the e-mailed link, or null. */
+export const parseResetHash = (hash: string): string | null => /^#\/reset\/([A-Za-z0-9_-]{20,200})$/.exec(hash)?.[1] ?? null;
 
 function SetupForm({ onDone }: { onDone: () => void }) {
   const [username, setUsername] = useState("");
@@ -157,7 +231,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return (
     <>
       {everSignedIn.current && children}
-      <LoginForm onDone={refresh} />
+      <LoginForm onDone={refresh} canReset={!!status.reset_enabled} />
     </>
   );
 }

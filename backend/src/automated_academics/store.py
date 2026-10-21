@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL,
     password_hash TEXT NOT NULL, role TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, expires_at TEXT NOT NULL
 );
@@ -98,6 +101,10 @@ class Store:
             member_cols = {r["name"] for r in c.execute("PRAGMA table_info(members)")}
             if "departments" not in member_cols:
                 c.execute("ALTER TABLE members ADD COLUMN departments TEXT")
+            # an e-mail address, for "forgot password" (empty = none)
+            user_cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
+            if "email" not in user_cols:
+                c.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
         with self._conn() as c:
             c.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer, which matters with several users
 
@@ -187,12 +194,39 @@ class Store:
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
 
-    def add_user(self, username: str, display_name: str, password_hash: str, role: str) -> str:
+    def add_user(self, username: str, display_name: str, password_hash: str, role: str, email: str = "") -> str:
         uid = _new_id()
         with self._conn() as c:
-            c.execute("INSERT INTO users (id, username, display_name, password_hash, role, created_at) VALUES (?,?,?,?,?,?)",
-                      (uid, username, display_name, password_hash, role, _now()))
+            c.execute("INSERT INTO users (id, username, display_name, password_hash, role, created_at, email) VALUES (?,?,?,?,?,?,?)",
+                      (uid, username, display_name, password_hash, role, _now(), email))
         return uid
+
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM users WHERE email=? AND email<>''", (email,)).fetchone()
+        return dict(row) if row else None
+
+    # ---- choosing a new password from an e-mailed link: one-use, short-lived, only the token's hash is kept ----
+    def create_reset(self, user_id: str, token_hash: str, ttl_s: float) -> None:
+        now = datetime.now(timezone.utc)
+        with self._conn() as c:
+            c.execute("DELETE FROM password_resets WHERE user_id=? OR expires_at < ?", (user_id, now.isoformat(timespec="microseconds")))
+            c.execute("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+                      (token_hash, user_id, now.isoformat(timespec="microseconds"), (now + timedelta(seconds=ttl_s)).isoformat(timespec="microseconds")))
+
+    def recent_reset(self, user_id: str, within_s: float) -> bool:
+        since = (datetime.now(timezone.utc) - timedelta(seconds=within_s)).isoformat(timespec="microseconds")
+        with self._conn() as c:
+            return c.execute("SELECT 1 FROM password_resets WHERE user_id=? AND created_at > ?", (user_id, since)).fetchone() is not None
+
+    def take_reset(self, token_hash: str) -> str | None:
+        """The user this token is for, and the token is used up; None if unknown, used or expired."""
+        with self._conn() as c:
+            row = c.execute("SELECT user_id, expires_at FROM password_resets WHERE token_hash=?", (token_hash,)).fetchone()
+            if row is None:
+                return None
+            c.execute("DELETE FROM password_resets WHERE token_hash=?", (token_hash,))
+        return row["user_id"] if row["expires_at"] > datetime.now(timezone.utc).isoformat(timespec="microseconds") else None
 
     def get_user(self, uid: str) -> dict[str, Any] | None:
         with self._conn() as c:
@@ -209,7 +243,7 @@ class Store:
             return [dict(r) for r in c.execute("SELECT * FROM users ORDER BY created_at, rowid")]
 
     def update_user(self, uid: str, **fields: Any) -> None:
-        allowed = {"display_name", "password_hash", "role", "disabled"}
+        allowed = {"display_name", "password_hash", "role", "disabled", "email"}
         assert set(fields) <= allowed, fields
         if not fields:
             return
@@ -220,6 +254,7 @@ class Store:
     def delete_user(self, uid: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+            c.execute("DELETE FROM password_resets WHERE user_id=?", (uid,))
             c.execute("DELETE FROM members WHERE user_id=?", (uid,))
             c.execute("DELETE FROM users WHERE id=?", (uid,))
 

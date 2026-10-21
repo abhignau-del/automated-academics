@@ -242,3 +242,5 @@ fieldset.settings { border: 0; padding: 0; margin: 0; min-width: 0; }
 .publinks .linkrow { display: flex; gap: 6px; margin-top: 4px; } .publinks .linkrow input { flex: 1; min-width: 200px; padding: 4px 6px; font-size: 12px; }
 .label.inline, label.inline { display: inline-flex; align-items: center; gap: 6px; }
 .check.block { display: flex; gap: 8px; align-items: baseline; margin: 4px 0; }
+
+.linklike { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }

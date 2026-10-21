@@ -153,9 +153,11 @@ export const changePassword = (current: string, next: string) =>
   request<void>("/auth/password", json("POST", { current, new: next }));
 
 export const listUsers = () => request<UserRow[]>("/users");
-export const addUser = (username: string, password: string, display_name: string, role: "admin" | "member") =>
-  request<AuthUser>("/users", json("POST", { username, password, display_name, role }));
-export const patchUser = (id: string, changes: { display_name?: string; password?: string; role?: "admin" | "member"; disabled?: boolean }) =>
+export const forgotPassword = (who: string) => request<{ ok: boolean; message: string }>("/auth/forgot", json("POST", { who }));
+export const resetPassword = (token: string, next: string) => request<{ ok: boolean }>("/auth/reset", json("POST", { token, new: next }));
+export const addUser = (username: string, password: string, display_name: string, role: "admin" | "member", email = "") =>
+  request<AuthUser>("/users", json("POST", { username, password, display_name, role, email }));
+export const patchUser = (id: string, changes: { display_name?: string; email?: string; password?: string; role?: "admin" | "member"; disabled?: boolean }) =>
   request<AuthUser>(`/users/${id}`, json("PATCH", changes));
 export const deleteUser = (id: string) => request<void>(`/users/${id}`, { method: "DELETE" });
 
