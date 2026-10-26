@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.13.0 (2026-10-26)
+
+Holidays and exam weeks in calendar files, and a clearer early/late-lectures check. Existing data, workbooks and databases keep working; databases gain `no_class` on `publications` in place.
 
 - **Holidays and exam weeks in calendar files.** Under a link with term dates, *Add break* lists days without lectures (a first and last
   day, optionally a name). Calendar files leave those days out of every event's weekly repeat, and the published page lists them. Breaks
