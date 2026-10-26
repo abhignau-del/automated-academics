@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "./api";
 import type { Publication } from "./api";
+import { rangeText } from "./times";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 type Kind = Publication["kinds"][number];
@@ -29,6 +30,8 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
   const [termStart, setTermStart] = useState("");
   const [termEnd, setTermEnd] = useState("");
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [brk, setBrk] = useState<Record<string, { start: string; end: string; label: string }>>({});
+  const draft = (id: string) => brk[id] ?? { start: "", end: "", label: "" };
   const term = termStart && termEnd ? { term_start: termStart, term_end: termEnd } : {};
 
   const load = useCallback(() => api.listPublications(iid).then(setLinks).catch((e) => setError(message(e))), [iid]);
@@ -76,6 +79,36 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
                         {!p.term_start ? "Set the term to offer students a calendar file." : p.times_set ? "Students can add it to their calendar." : "Set lecture times (Data → Settings) to offer a calendar file."}
                       </small>
                     </div>
+                    {p.term_start && p.term_end && (
+                      <div className="breaks">
+                        <small className="muted">No lectures (left out of calendar files):</small>
+                        {p.no_class.length === 0 && <small className="muted"> none</small>}
+                        <ul>
+                          {p.no_class.map((n, i) => (
+                            <li key={i}>{rangeText(n)}{" "}
+                              <button className="linklike" aria-label={`remove break ${rangeText(n)}`}
+                                onClick={() => void run(() => api.changePublication(iid, p.id, { no_class: p.no_class.filter((_, j) => j !== i) }))}>remove</button>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="termrow">
+                          <input type="date" aria-label={`break from for ${p.label || p.id}`} value={brk[p.id]?.start ?? ""} min={p.term_start} max={p.term_end}
+                            onChange={(e) => setBrk({ ...brk, [p.id]: { ...draft(p.id), start: e.target.value } })} />
+                          <label className="inline">to
+                            <input type="date" aria-label={`break to for ${p.label || p.id}`} value={brk[p.id]?.end ?? ""} min={brk[p.id]?.start || p.term_start} max={p.term_end}
+                              onChange={(e) => setBrk({ ...brk, [p.id]: { ...draft(p.id), end: e.target.value } })} />
+                          </label>
+                          <input placeholder="e.g. Diwali (optional)" aria-label={`break name for ${p.label || p.id}`} size={16} maxLength={60} value={brk[p.id]?.label ?? ""}
+                            onChange={(e) => setBrk({ ...brk, [p.id]: { ...draft(p.id), label: e.target.value } })} />
+                          <button className="btn small" disabled={!brk[p.id]?.start || (!!brk[p.id]?.end && brk[p.id].end < brk[p.id].start)}
+                            onClick={() => run(async () => {
+                              const b = brk[p.id];
+                              await api.changePublication(iid, p.id, { no_class: [...p.no_class, { start: b.start, end: b.end || b.start, label: b.label.trim() }] });
+                              setBrk({ ...brk, [p.id]: { start: "", end: "", label: "" } });
+                            })}>Add break</button>
+                        </div>
+                      </div>
+                    )}
                     <div className="linkrow">
                       <input readOnly value={linkOf(p)} aria-label={`link ${p.label || p.id}`} onFocus={(e) => e.target.select()} />
                       <button className="btn small" onClick={() => copy(p)}>{copied === p.id ? "Copied" : "Copy"}</button>
@@ -133,8 +166,9 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
             Create link
           </button>
         </div>
-        <p className="muted small">Give the first and last day of the term and students can add their timetable to a phone or computer calendar; it repeats every week of the term (holidays aren't known to the app), and updates when you point the link at a newer timetable.</p>
+        <p className="muted small">Give the first and last day of the term and students can add their timetable to a phone or computer calendar; it repeats every week of the term, and updates when you point the link at a newer timetable.</p>
         <p className="muted small">The link shows the timetable as it is now, including changes you save to it later. It does not follow a newly generated timetable until you choose “Show the current timetable”.</p>
+        <p className="muted small">After you create a link, list the term's holidays and exam weeks under it (“Add break”): a calendar file leaves those days out and the page lists them.</p>
 
         <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
       </div>

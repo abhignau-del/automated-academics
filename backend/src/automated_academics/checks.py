@@ -224,6 +224,16 @@ def diagnose(inst: Institution) -> list[Issue]:
     if any(b >= lectures - 1 for b in cal.break_after):
         note("warning", "settings", None, "calendar.break_after", "a break after the last lecture has no effect")
 
+    if inst.weights.odd_hours > 0:
+        odd = len(cal.odd_lectures())
+        middle = days * (lectures - odd)
+        forced = {bid: n - middle for bid, n in batch_hours.items() if bid in leaves and n > middle}
+        if forced:
+            total, worst = sum(forced.values()), max(forced, key=forced.get)
+            note("info", "settings", None, "weights.odd_hours",
+                 f"the early/late-lectures goal cannot reach zero here: {len(forced)} class(es) have more lectures than the "
+                 f"{middle} in the middle of the week, so at least {total} lectures must fall in an early or late slot "
+                 f"(most for {worst}: {forced[worst]})")
     out += _pin_problems(inst)
     out += _room_demand(inst)
     out += _clock_overlaps(inst)

@@ -45,7 +45,7 @@ from .views import entities, session_views
 from .grid_io import GridError, GridOptions, import_grid
 from .mail import Mailer, SmtpMailer, normalise_email, reset_message
 from .scope import institution_violations, timetable_violations
-from .calendar_ics import MAX_TERM_DAYS, build_ics, has_times
+from .calendar_ics import MAX_TERM_DAYS, break_days, build_ics, has_times
 from .changes import describe_changes, describe_timetable_edit, timetable_delta
 from .workload_io import WorkloadError, WorkloadOptions, import_workload
 
@@ -169,6 +169,28 @@ class PasswordChange(BaseModel):
     new: str
 
 
+MAX_NO_CLASS = 60
+
+
+class NoClass(BaseModel):
+    """A run of days with no lectures, e.g. a festival week: first day, last day (the same for one day) and what to call it."""
+    start: date
+    end: date
+    label: str = Field(default="", max_length=60)
+
+    @model_validator(mode="after")
+    def _order(self) -> "NoClass":
+        if not self.start <= self.end <= self.start + timedelta(days=MAX_TERM_DAYS):
+            raise ValueError(f"a break must end on or after it starts, and last at most {MAX_TERM_DAYS} days")
+        return self
+
+
+def _no_class_rows(items: list[NoClass]) -> list[dict[str, str]]:
+    """Stored in date order, labels trimmed."""
+    return [{"start": n.start.isoformat(), "end": n.end.isoformat(), "label": n.label.strip()}
+            for n in sorted(items, key=lambda n: (n.start, n.end))]
+
+
 class PublishIn(BaseModel):
     job_id: str | None = None  # default: the institution's latest finished timetable
     label: str = Field(default="", max_length=80)
@@ -177,6 +199,8 @@ class PublishIn(BaseModel):
     # The first and last day of the term: with them the page can offer a calendar file (.ics) that repeats weekly between them.
     term_start: date | None = None
     term_end: date | None = None
+    # Days without lectures inside the term (holidays, exam weeks): a calendar file leaves them out.
+    no_class: list[NoClass] = Field(default=[], max_length=MAX_NO_CLASS)
 
     @model_validator(mode="after")
     def _term(self) -> "PublishIn":
@@ -192,6 +216,7 @@ class PublishPatch(BaseModel):
     term_start: date | None = None  # send both as null to remove the term dates
     term_end: date | None = None
     note: str | None = Field(default=None, max_length=200)  # a few words for students about this update
+    no_class: list[NoClass] | None = Field(default=None, max_length=MAX_NO_CLASS)  # [] clears the list; omit to keep it
 
     @model_validator(mode="after")
     def _term(self) -> "PublishPatch":
@@ -921,7 +946,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         inst = store.get_institution(p["institution_id"])
         return {"id": p["id"], "job_id": p["job_id"], "label": p["label"], "kinds": p["kinds"], "token": p["token"],
                 "path": f"/#/p/{p['token']}", "created_at": p["created_at"], "expires_at": p["expires_at"],
-                "expired": _expired(p), "term_start": p["term_start"], "term_end": p["term_end"], "note": p["note"],
+                "expired": _expired(p), "term_start": p["term_start"], "term_end": p["term_end"], "no_class": p["no_class"], "note": p["note"],
                 "updated_at": p["updated_at"], "times_set": bool(inst and has_times(inst))}
 
     def _expired(p: dict) -> bool:
@@ -960,7 +985,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         kinds = [k for k in _ALL_KINDS if k in body.kinds]
         row = store.add_publication(iid, job_id, authlib.new_token(), body.label.strip(), kinds, me(request).id, body.expires_days,
                                     body.term_start.isoformat() if body.term_start else None,
-                                    body.term_end.isoformat() if body.term_end else None)
+                                    body.term_end.isoformat() if body.term_end else None, _no_class_rows(body.no_class))
         audit(request, "publication.created", f"published a timetable link \u201c{row['label'] or 'untitled'}\u201d", iid,
               {"label": row["label"], "kinds": kinds, "expires_days": body.expires_days, "job": job_id})
         return link_view(row, request)
@@ -982,6 +1007,8 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         if "term_start" in body.model_fields_set or "term_end" in body.model_fields_set:
             fields["term_start"] = body.term_start.isoformat() if body.term_start else None
             fields["term_end"] = body.term_end.isoformat() if body.term_end else None
+        if body.no_class is not None:
+            fields["no_class"] = _no_class_rows(body.no_class)
         if body.label is not None:
             fields["label"] = body.label.strip()
         if body.kinds is not None:
@@ -1039,6 +1066,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             "institution": inst.name, "label": row["label"], "kinds": row["kinds"], "published_at": row["created_at"],
             "expires_at": row["expires_at"], "calendar": inst.calendar.model_dump(mode="json"),
             "calendar_feed": bool(row["term_start"] and row["term_end"] and has_times(inst)),
+            "no_class": row["no_class"] if row["term_start"] and row["term_end"] else [],
             "update": recent_update(row, tt),
             "entities": {k: [{"id": i, "label": lab, **({"clock": inst.clock_of_batch(i)} if k == "batch" else {})}
                              for i, lab in entities(inst, k)] for k in row["kinds"]},
@@ -1079,7 +1107,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             raise HTTPException(404, "the publisher has not set the term dates, so there is no calendar file")
         try:
             text = build_ics(inst, tt, kind, id, date.fromisoformat(row["term_start"]), date.fromisoformat(row["term_end"]),
-                             datetime.fromisoformat(row["updated_at"] or row["created_at"]))
+                             datetime.fromisoformat(row["updated_at"] or row["created_at"]), break_days(row["no_class"]))
         except LookupError:
             raise HTTPException(404, f"{kind} not found") from None
         except ValueError as e:

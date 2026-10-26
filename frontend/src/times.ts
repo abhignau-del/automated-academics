@@ -121,3 +121,9 @@ export function removeClock(inst: Institution, name: string): Institution {
     batches: inst.batches.map((b) => (b.clock === name ? { ...b, clock: null } : b)),
   };
 }
+
+const dayText = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+/** A break such as "16 Nov – 22 Nov · Diwali" (a single day shows once). */
+export const rangeText = (n: { start: string; end: string; label: string }) =>
+  (n.start === n.end ? dayText(n.start) : `${dayText(n.start)} – ${dayText(n.end)}`) + (n.label ? ` · ${n.label}` : "");

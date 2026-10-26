@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as api from "./api";
 import type { PublicMeta, PublicSession, RemovedSession } from "./api";
 import { assignLanes, courseColour, sessionKey } from "./timetable";
-import { range, sideTimes } from "./times";
+import { range, rangeText, sideTimes } from "./times";
 import type { Placement } from "./types";
 
 type Kind = "batch" | "faculty" | "room";
@@ -214,6 +214,11 @@ export function PublicTimetable({ token }: { token: string }) {
               onClick={() => { void navigator.clipboard?.writeText(api.publicCalendarUrl(token, kind, id)).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
               {copied ? "Copied" : "Copy calendar address"}
             </button>
+          </p>
+        )}
+        {meta.no_class.length > 0 && (
+          <p className="muted small" aria-label="no lectures">
+            No lectures: {meta.no_class.map(rangeText).join("; ")}.
           </p>
         )}
         <p className="muted small">

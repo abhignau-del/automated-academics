@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillTimes, inOrder, pretty, resizeTimes, timeLabel, timesOn, withLectureCount } from "./times";
+import { fillTimes, inOrder, pretty, rangeText, resizeTimes, timeLabel, timesOn, withLectureCount } from "./times";
 import type { Calendar } from "./types";
 
 const cal = (extra: Partial<Calendar> = {}): Calendar =>
@@ -107,5 +107,14 @@ describe("clocks", () => {
     const c = withLectureCount(inst().calendar, 6);
     expect(c.clocks!["40-minute"]).toHaveLength(6);
     expect(inOrder(c.clocks!["40-minute"])).toBe(true);
+  });
+});
+
+describe("rangeText", () => {
+  it("shows one day once, a run as a range, and the name when there is one", () => {
+    const day = new Date("2026-11-16T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    const end = new Date("2026-11-22T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    expect(rangeText({ start: "2026-11-16", end: "2026-11-16", label: "" })).toBe(day);
+    expect(rangeText({ start: "2026-11-16", end: "2026-11-22", label: "Diwali" })).toBe(`${day} – ${end} · Diwali`);
   });
 });

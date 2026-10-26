@@ -3,8 +3,8 @@
 Each session becomes one event that repeats every week from the first matching day of the term until its last day.
 Times are "floating" (no time zone), so a calendar shows them as the same clock time wherever the phone is, which is what a
 college timetable means. The unique id of an event depends only on the session, so when a calendar re-reads the address after
-the timetable changed, it updates the events instead of duplicating them. Holidays are not known to the app: a calendar shows
-every week of the term.
+the timetable changed, it updates the events instead of duplicating them. Holidays and exam weeks are whatever the publisher
+listed as breaks; the weeks they cover are left out of each event's repeat.
 """
 
 from __future__ import annotations
@@ -48,9 +48,17 @@ def has_times(inst: Institution) -> bool:
     return bool(cal.times or cal.clocks or cal.day_times)
 
 
+def break_days(rows: list[dict[str, str]]) -> list[tuple[date, date]]:
+    """Stored breaks ({start, end, label}) as (first day, last day) pairs."""
+    return [(date.fromisoformat(r["start"]), date.fromisoformat(r["end"])) for r in rows]
+
+
 def build_ics(inst: Institution, tt: Timetable, kind: Kind, ident: str, term_start: date, term_end: date,
-              stamp: datetime) -> str:
-    """Raises LookupError for an unknown entity and ValueError if the lecture times are not set."""
+              stamp: datetime, breaks: list[tuple[date, date]] | None = None) -> str:
+    """Raises LookupError for an unknown entity and ValueError if the lecture times are not set.
+
+    `breaks` are runs of days (first, last) with no lectures: those weeks' events are left out of the repeat.
+    """
     cal = inst.calendar
     sessions = session_views(inst, tt, kind, ident)
     label = dict(entities(inst, kind))[ident]
@@ -63,8 +71,13 @@ def build_ics(inst: Institution, tt: Timetable, kind: Kind, ident: str, term_sta
         hh, mm = rows[s["start"]].start.split(":")
         eh, em = rows[s["start"] + s["length"] - 1].end.split(":")
         first = term_start + timedelta(days=(weekday_of(cal.day_names, s["day"]) - term_start.weekday()) % 7)
-        if first > term_end:
+        days = [first + timedelta(weeks=k) for k in range((term_end - first).days // 7 + 1)] if first <= term_end else []
+        off = [d for d in days if any(a <= d <= b for a, b in breaks or ())]
+        days = [d for d in days if d not in off]
+        if not days:  # nothing left of this session in the term
             continue
+        first = days[0]
+        skipped = [d for d in off if d > first]
         who = ", ".join(s["batch_ids"])
         title = {"batch": f"{s['course_name']} ({s['faculty_name']})", "faculty": f"{s['course_name']} \u2013 {who}",
                  "room": f"{s['course_name']} \u2013 {who} ({s['faculty_name']})"}[kind]
@@ -73,6 +86,7 @@ def build_ics(inst: Institution, tt: Timetable, kind: Kind, ident: str, term_sta
             "BEGIN:VEVENT", f"UID:{uid}@automated-academics", f"DTSTAMP:{stamp:%Y%m%dT%H%M%SZ}",
             f"DTSTART:{first:%Y%m%d}T{hh}{mm}00", f"DTEND:{first:%Y%m%d}T{eh}{em}00",
             f"RRULE:FREQ=WEEKLY;UNTIL={term_end:%Y%m%d}T235959",
+            *([f"EXDATE:{','.join(f'{d:%Y%m%d}T{hh}{mm}00' for d in skipped)}"] if skipped else []),
             f"SUMMARY:{_escape(title)}", f"LOCATION:{_escape(s['room_name'])}",
             "DESCRIPTION:" + _escape(f"{s['course_code']} {s['course_name']}\nTeacher: {s['faculty_name']}\nClass: {who}\nRoom: {s['room_name']}"),
             "END:VEVENT",

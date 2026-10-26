@@ -101,6 +101,9 @@ class Store:
                     c.execute(f"ALTER TABLE publications ADD COLUMN {col} TEXT")
             if "note" not in pub_cols:
                 c.execute("ALTER TABLE publications ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            # holidays and exam weeks (JSON list of {start, end, label}) that a calendar file leaves out
+            if "no_class" not in pub_cols:
+                c.execute("ALTER TABLE publications ADD COLUMN no_class TEXT NOT NULL DEFAULT '[]'")
             # counts every change (including ones that leave updated_at alone), so two editors can't overwrite each other
             if "version" not in cols:
                 c.execute("ALTER TABLE institutions ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
@@ -354,17 +357,19 @@ class Store:
     def _publication(row: Any) -> dict[str, Any]:
         d = dict(row)
         d["kinds"] = json.loads(d["kinds"])
+        d["no_class"] = json.loads(d["no_class"])
         return d
 
     def add_publication(self, iid: str, job_id: str, token: str, label: str, kinds: list[str], created_by: str | None,
-                        expires_days: float | None, term_start: str | None = None, term_end: str | None = None) -> dict[str, Any]:
+                        expires_days: float | None, term_start: str | None = None, term_end: str | None = None,
+                        no_class: list[dict[str, str]] | None = None) -> dict[str, Any]:
         pid, now = _new_id(), datetime.now(timezone.utc)
         expires = (now + timedelta(days=expires_days)).isoformat(timespec="microseconds") if expires_days else None
         with self._conn() as c:
             c.execute("INSERT INTO publications (id, institution_id, job_id, token, label, kinds, created_by, created_at, expires_at, "
-                      "term_start, term_end) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                      "term_start, term_end, no_class) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                       (pid, iid, job_id, token, label, json.dumps(kinds), created_by, now.isoformat(timespec="microseconds"), expires,
-                       term_start, term_end))
+                       term_start, term_end, json.dumps(no_class or [])))
             row = c.execute("SELECT * FROM publications WHERE id=?", (pid,)).fetchone()
         return self._publication(row)
 
@@ -379,10 +384,12 @@ class Store:
         return [self._publication(r) for r in rows]
 
     def update_publication(self, pid: str, iid: str, **fields: Any) -> bool:
-        allowed = {"job_id", "label", "kinds", "expires_at", "term_start", "term_end", "prev_job_id", "updated_at", "note"}
+        allowed = {"job_id", "label", "kinds", "expires_at", "term_start", "term_end", "prev_job_id", "updated_at", "note", "no_class"}
         assert set(fields) <= allowed, fields
         if "kinds" in fields:
             fields["kinds"] = json.dumps(fields["kinds"])
+        if "no_class" in fields:
+            fields["no_class"] = json.dumps(fields["no_class"])
         if not fields:
             return self.get_publication(pid, iid) is not None
         sets = ", ".join(k + "=?" for k in fields)

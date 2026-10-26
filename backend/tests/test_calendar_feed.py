@@ -266,3 +266,152 @@ def test_event_ids_survive_a_link_being_pointed_at_a_newer_timetable(world):
     assert o.patch(f"/institutions/{iid}/publications/{made['id']}", json={"job_id": newer}).status_code == 200
     time.sleep(0.01)
     assert {e["UID"] for e in events(ics(world, made["token"]).text)} == before
+
+
+# ---------- breaks: holidays and exam weeks ----------
+
+def occurrences(ev):
+    """The days one event happens on, read the way a calendar app would: weekly from DTSTART to UNTIL, minus EXDATE."""
+    first = datetime.strptime(ev["DTSTART"][:8], "%Y%m%d").date()
+    until = datetime.strptime(re.search(r"UNTIL=(\d{8})", ev["RRULE"]).group(1), "%Y%m%d").date()
+    skipped = {datetime.strptime(x[:8], "%Y%m%d").date() for x in ev.get("EXDATE", "").split(",") if x}
+    days, d = [], first
+    while d <= until:
+        if d not in skipped:
+            days.append(d)
+        d += timedelta(weeks=1)
+    return days
+
+
+TERM = {"term_start": "2026-11-02", "term_end": "2027-02-27"}
+
+
+def test_a_break_week_is_left_out_of_every_event(world):
+    plain = events(ics(world, link(world, **TERM)["token"]).text)
+    token = link(world, **TERM, no_class=[{"start": "2026-11-16", "end": "2026-11-22", "label": "Diwali"}])["token"]
+    got = events(ics(world, token).text)
+    assert len(got) == len(plain) > 0
+    for a, b in zip(sorted(plain, key=lambda e: e["UID"]), sorted(got, key=lambda e: e["UID"])):
+        assert a["UID"] == b["UID"]
+        assert len(occurrences(b)) == len(occurrences(a)) - 1
+        assert not any(date(2026, 11, 16) <= d <= date(2026, 11, 22) for d in occurrences(b))
+        assert "EXDATE" in b and b["EXDATE"].count(",") == 0 and b["EXDATE"].endswith(a["DTSTART"][8:])
+
+
+def test_a_single_day_break_only_removes_that_weekday(world):
+    plain = events(ics(world, link(world, **TERM)["token"]).text)
+    token = link(world, **TERM, no_class=[{"start": "2026-11-18", "end": "2026-11-18"}])["token"]  # a Wednesday
+    got = {e["UID"]: e for e in events(ics(world, token).text)}
+    hit = 0
+    for a in plain:
+        b = got[a["UID"]]
+        lost = len(occurrences(a)) - len(occurrences(b))
+        assert lost == (1 if date(2026, 11, 18) in occurrences(a) else 0)
+        hit += lost
+    assert hit > 0  # the sample has Wednesday lectures
+
+
+def test_a_break_at_the_start_moves_the_first_day_instead_of_listing_it_as_skipped(world):
+    plain = {e["UID"]: e for e in events(ics(world, link(world, **TERM)["token"]).text)}
+    token = link(world, **TERM, no_class=[{"start": "2026-11-02", "end": "2026-11-08"}])["token"]  # the whole first week
+    for e in events(ics(world, token).text):
+        assert "EXDATE" not in e
+        assert occurrences(e)[0] == occurrences(plain[e["UID"]])[1]
+
+
+def test_a_break_covering_the_term_leaves_an_empty_but_valid_calendar(world):
+    token = link(world, **TERM, no_class=[{"start": "2026-10-01", "end": "2027-03-31"}])["token"]
+    r = ics(world, token)
+    assert r.status_code == 200 and events(r.text) == [] and r.text.startswith("BEGIN:VCALENDAR")
+
+
+def test_breaks_outside_the_term_change_nothing(world):
+    plain = ics(world, link(world, **TERM)["token"]).text
+    token = link(world, **TERM, no_class=[{"start": "2025-01-01", "end": "2025-01-31"}, {"start": "2027-06-01", "end": "2027-06-30"}])["token"]
+    strip = lambda t: re.sub(r"DTSTAMP:\S+", "", t)
+    assert strip(ics(world, token).text) == strip(plain)
+
+
+def test_breaks_are_stored_in_date_order_and_can_be_changed_or_cleared(world):
+    pub = link(world, **TERM, no_class=[{"start": "2027-01-26", "end": "2027-01-26", "label": "  Republic Day "},
+                                        {"start": "2026-11-16", "end": "2026-11-22", "label": "Diwali"}])
+    assert [n["start"] for n in pub["no_class"]] == ["2026-11-16", "2027-01-26"] and pub["no_class"][1]["label"] == "Republic Day"
+    url = f"/institutions/{world['iid']}/publications/{pub['id']}"
+    assert world["owen"].patch(url, json={"label": "renamed"}).json()["no_class"] == pub["no_class"]  # left alone when not sent
+    assert world["owen"].patch(url, json={"no_class": [{"start": "2026-12-25", "end": "2026-12-25", "label": "Christmas"}]}).json()["no_class"] == [
+        {"start": "2026-12-25", "end": "2026-12-25", "label": "Christmas"}]
+    assert world["owen"].patch(url, json={"no_class": []}).json()["no_class"] == []
+    assert [p["no_class"] for p in world["owen"].get(f"/institutions/{world['iid']}/publications").json()] == [[]]
+
+
+def test_the_page_lists_the_breaks_only_when_there_is_a_term(world):
+    brk = [{"start": "2026-11-16", "end": "2026-11-22", "label": "Diwali"}]
+    token = link(world, **TERM, no_class=brk)["token"]
+    assert world["public"].get(f"/public/{token}").json()["no_class"] == [{**brk[0]}]
+    bare = link(world, no_class=brk)["token"]  # no term: nothing to leave out of
+    assert world["public"].get(f"/public/{bare}").json()["no_class"] == []
+
+
+@pytest.mark.parametrize("bad", [
+    [{"start": "2026-11-20", "end": "2026-11-19"}],
+    [{"start": "2026-01-01", "end": "2027-03-01"}],  # longer than a term can be
+    [{"start": "2026-11-16", "end": "2026-11-16", "label": "x" * 61}],
+    [{"start": "2026-11-16", "end": "2026-11-16"}] * 61,
+    [{"start": "tomorrow", "end": "2026-11-16"}],
+])
+def test_bad_breaks_are_refused(world, bad):
+    r = world["owen"].post(f"/institutions/{world['iid']}/publications", json={"job_id": world["jid"], "no_class": bad})
+    assert r.status_code == 422
+    pub = link(world, **TERM)
+    assert world["owen"].patch(f"/institutions/{world['iid']}/publications/{pub['id']}", json={"no_class": bad}).status_code == 422
+
+
+def test_changing_the_breaks_is_in_the_activity_log(world):
+    pub = link(world, **TERM)
+    world["owen"].patch(f"/institutions/{world['iid']}/publications/{pub['id']}", json={"no_class": [{"start": "2026-11-16", "end": "2026-11-16"}]})
+    rows = world["owen"].get(f"/institutions/{world['iid']}/audit").json()
+    assert any(r["action"] == "publication.changed" and "no_class" in r["summary"] for r in rows)
+
+
+def test_a_database_from_before_breaks_opens_and_gets_the_column(tmp_path):
+    from automated_academics.store import Store
+    path = str(tmp_path / "old.db")
+    Store(path)
+    with sqlite3.connect(path) as c:
+        c.execute("ALTER TABLE publications DROP COLUMN no_class")
+    s = Store(path)
+    with sqlite3.connect(path) as c:
+        assert "no_class" in {r[1] for r in c.execute("PRAGMA table_info(publications)")}
+    assert s.list_publications("none") == []
+
+
+# ---------- the early/late floor in the checks ----------
+
+def test_checks_say_when_early_and_late_lectures_cannot_reach_zero():
+    from automated_academics.checks import diagnose
+    inst = sample_institution()
+    inst.weights.odd_hours = 5
+    leaves = set(inst.leaf_batches())
+    hours = {b: 0 for b in leaves}
+    for o in inst.offerings:
+        for b in inst.occupied_batches(o.batch_ids) & leaves:
+            hours[b] += sum(o.sessions)
+    saw_exact = False
+    for early, late in [(e, l) for e in range(4) for l in range(4)]:  # how many lectures at each end of the day count as odd
+        inst.calendar.early_count, inst.calendar.late_count = early, late
+        middle = inst.calendar.days * (inst.calendar.lectures_per_day - len(inst.calendar.odd_lectures()))
+        forced = sum(max(0, n - middle) for n in hours.values())
+        over = sum(1 for n in hours.values() if n > middle)
+        saw_exact |= any(n == middle for n in hours.values())
+        notes = [d for d in diagnose(inst) if "early/late" in d.message]
+        if forced:
+            assert len(notes) == 1 and notes[0].level == "info" and f"at least {forced} lectures" in notes[0].message
+            assert f"{over} class(es) have more" in notes[0].message
+        else:
+            assert not notes
+    assert saw_exact, "the sample should have a class loaded exactly to the limit for some setting"
+    inst.weights.odd_hours = 0  # goal off: no comment
+    assert not [d for d in diagnose(inst) if "early/late" in d.message]
+    inst.weights.odd_hours = 5
+    inst.calendar.early_count = inst.calendar.late_count = 0  # nothing counts as early or late
+    assert not [d for d in diagnose(inst) if "early/late" in d.message]

@@ -150,7 +150,8 @@ docker compose up -d        # then open http://localhost:8000
    **Add to my calendar**, **Download .ics file** and **Copy calendar address** for the class on screen: one event per session,
    repeating every week of the term, at the class's own clock times. The address keeps working, so a phone calendar that
    subscribes to it picks up later changes (events keep their identity, so they are updated rather than duplicated; calendar apps
-   typically refresh every few hours). Holidays are not known to the app, so every week of the term is shown.
+   typically refresh every few hours). Under each link, **Add break** lists the term's holidays and exam weeks (a first and last day,
+   and a name such as "Diwali"): calendar files then leave those days out, and the page lists them under the timetable.
 
    *What changed.* When you choose **Show the current timetable** on a link (optionally with a short note for students), the page
    shows for two weeks "Timetable updated on ...", marks the lectures that are new or moved for the class being viewed and lists
@@ -498,7 +499,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (thirteen so far, about 190 checks). Each one starts its own copy of the app with an empty data folder.
+so on (thirteen so far, about 195 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

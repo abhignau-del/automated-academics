@@ -194,17 +194,21 @@ export const keepImportedTimetable = (iid: string, placements: Placement[]) =>
 
 // ---- publishing a timetable by link ----
 
+/** A run of days without lectures: first and last day (YYYY-MM-DD, the same for one day) and what to call it. */
+export interface NoClass { start: string; end: string; label: string }
+
 export interface Publication {
   id: string; job_id: string; label: string; kinds: ("batch" | "faculty" | "room")[]; token: string;
   path: string; // "/#/p/<token>": append to the site's address
   created_at: string; expires_at: string | null; expired: boolean;
   term_start: string | null; term_end: string | null; // first and last day of the term (YYYY-MM-DD): lets students add the timetable to a calendar
+  no_class: NoClass[]; // holidays and exam weeks a calendar file leaves out
   note: string; updated_at: string | null; times_set: boolean; // times_set: the institution has lecture times, which a calendar file needs
 }
 export const listPublications = (iid: string) => request<Publication[]>(`/institutions/${iid}/publications`);
 export const publish = (iid: string, body: { job_id?: string; label?: string; kinds: Publication["kinds"]; expires_days?: number | null; term_start?: string | null; term_end?: string | null }) =>
   request<Publication>(`/institutions/${iid}/publications`, json("POST", body));
-export const changePublication = (iid: string, pid: string, body: { job_id?: string; label?: string; kinds?: Publication["kinds"]; expires_days?: number | null; term_start?: string | null; term_end?: string | null; note?: string }) =>
+export const changePublication = (iid: string, pid: string, body: { job_id?: string; label?: string; kinds?: Publication["kinds"]; expires_days?: number | null; term_start?: string | null; term_end?: string | null; note?: string; no_class?: NoClass[] }) =>
   request<Publication>(`/institutions/${iid}/publications/${pid}`, json("PATCH", body));
 export const revokePublication = (iid: string, pid: string) => request<void>(`/institutions/${iid}/publications/${pid}`, { method: "DELETE" });
 
@@ -215,6 +219,7 @@ export interface PublicMeta {
   entities: Partial<Record<Publication["kinds"][number], { id: string; label: string; clock?: string | null }[]>>;
   everything: boolean;
   calendar_feed: boolean; // the publisher gave term dates and the institution has lecture times
+  no_class: NoClass[]; // holidays and exam weeks inside the term
   update: { at: string; note: string; moved: number; added: number; removed: number } | null; // set for two weeks after a newer timetable replaced the old
 }
 export interface PublicSession {

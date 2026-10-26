@@ -59,6 +59,23 @@ await journey("calendar_and_changes", { auth: true }, async ({ base, person, che
   check("the file is a calendar with weekly repeating events", text.startsWith("BEGIN:VCALENDAR") && /RRULE:FREQ=WEEKLY;UNTIL=20270227T235959/.test(text) && (text.match(/BEGIN:VEVENT/g) ?? []).length > 3);
   check("no update notice before anything changed", (await S.page.getByText("Timetable updated").count()) === 0);
 
+  // the owner lists a holiday week; the calendar file then leaves it out and the page says so
+  await O.page.getByLabel("break from for Semester 1").fill("2026-11-16");
+  await O.page.getByLabel("break to for Semester 1").fill("2026-11-22");
+  await O.page.getByLabel("break name for Semester 1").fill("Diwali week");
+  await O.page.getByRole("button", { name: "Add break" }).click();
+  await O.page.waitForSelector("li:has-text('Diwali week')");
+  check("the break is listed under the link", (await O.page.locator("li:has-text('Diwali week')").count()) === 1);
+  await S.page.reload();
+  await S.page.waitForSelector(".card", { timeout: 30000 });
+  check("the page lists the break for students", /Diwali week/.test(await S.page.getByLabel("no lectures").innerText()));
+  const withBreak = await S.page.evaluate(async (u) => (await fetch(u)).text(), file);
+  const events = (withBreak.match(/BEGIN:VEVENT/g) ?? []).length;
+  check("every event now skips that week", (withBreak.match(/EXDATE:2026111[6-9]T|EXDATE:2026112[0-2]T/g) ?? []).length === events && events > 3, `${events} events`);
+  await O.page.getByRole("button", { name: /remove break/ }).click();
+  await O.page.waitForSelector("text=none");
+  check("a break can be removed", !/EXDATE/.test(await S.page.evaluate(async (u) => (await fetch(u)).text(), file)));
+
   // the owner makes a changed timetable (one session moved, one dropped) and points the link at it
   const full = (await call(O.page, "GET", `/jobs/${job}/timetable`)).body.placements;
   const days = inst.calendar.day_names.length;

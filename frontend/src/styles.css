@@ -249,3 +249,5 @@ fieldset.settings { border: 0; padding: 0; margin: 0; min-width: 0; }
 .removedlist { margin: 6px 0 0 18px; padding: 0; }
 .termrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
 .termrow input[type=date] { font: inherit; }
+.breaks { margin: 6px 0; }
+.breaks ul { margin: 2px 0 6px; padding-left: 18px; }

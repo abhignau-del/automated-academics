@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Holidays and exam weeks in calendar files.** Under a link with term dates, *Add break* lists days without lectures (a first and last
+  day, optionally a name). Calendar files leave those days out of every event's weekly repeat, and the published page lists them. Breaks
+  outside the term change nothing; a break covering the whole term gives an empty calendar. Databases gain `no_class` on `publications`
+  in place.
+- **Checks explain the early/late-lectures goal.** When the goal is on but the classes are loaded so fully that some lectures must fall in
+  an early or late slot anyway, the checks now say so, with the least number that cannot be avoided. (Found running a real management
+  institute's data: every class had 21 to 24 of its 24 weekly lectures, so at least 97 of 124 early/late lectures were unavoidable.)
+
 ## v0.12.0 (2026-10-21)
 
 Password reset by e-mail, room and time-of-day goals, and calendar files for published links. Existing data, workbooks and databases keep working; databases gain `users.email`, a `password_resets` table, new `publications` columns and the goals' settings in place. The new goals are off until weighted, and password reset is off until a mail server is configured.
