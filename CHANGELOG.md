@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.14.0 (2026-10-27)
+
+Named home rooms for classes. Existing data, workbooks and databases keep working; a class has no home room until you choose one.
 
 - **Named home rooms.** A class can be given a *Home room* (Classes table, or `home_room` in the workbook, by id or room name). Its
   classroom lectures then go in that room only. Labs, halls and a class's practical sub-groups are unaffected, and a joint lecture of
