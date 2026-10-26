@@ -26,7 +26,7 @@ from collections.abc import Sequence
 
 from .models import Institution, Placement, Timetable, Weights
 from .quality import measure, score
-from .solver import InfeasibleError, TimedOut, solve
+from .solver import InfeasibleError, TimedOut, home_room_for, solve
 
 log = logging.getLogger("automated_academics")
 
@@ -80,6 +80,7 @@ def room_pool(inst: Institution, ids: Sequence[str], busy: Counter[str], keep: S
     cal = inst.calendar
     slots = cal.days * cal.lectures_per_day
     pool = set(keep)
+    pool |= {h for i in ids if (h := home_room_for(inst, by_id[i].batch_ids, courses[by_id[i].course_code].room_kind))}
     for kind in {courses[by_id[i].course_code].room_kind for i in ids}:
         offs = [by_id[i] for i in ids if courses[by_id[i].course_code].room_kind is kind]
         hours = sum(sum(o.sessions) for o in offs)

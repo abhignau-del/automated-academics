@@ -246,7 +246,7 @@ const DataRow = memo(function DataRow({ table, index, row, issues, selected, opt
       case "number": return <Num label={col.aria} min={col.min} value={value as number} issue={issue} onChange={set} />;
       case "select": {
         const isParent = col.key === "group_of";
-        const nullable = isParent || col.key === "clock"; // blank means "none" / "the default times"
+        const nullable = isParent || col.key === "clock" || col.key === "home_room"; // blank means "none" / "the default times" / "any room"
         const options = (opts[`${table}.${col.key}`] ?? []).filter((o) => !(isParent && o.value === id));
         return <Pick label={col.aria} allowBlank={nullable} list={listId(table, col.key)} value={String(value ?? "")} options={options} issue={issue}
           onChange={(v) => set(nullable ? v || null : v)} />;
@@ -371,14 +371,14 @@ function BulkBar({ table, count, opts, onSet, onDuplicate, onDelete, onClear, on
         to
         {col?.kind === "select" && choices ? (
           <select aria-label="new value" value={text} onChange={(e) => setText(e.target.value)}>
-            <option value="">{col.key === "group_of" ? "(none)" : col.key === "clock" ? "(default times)" : "(choose)"}</option>
+            <option value="">{col.key === "group_of" ? "(none)" : col.key === "clock" ? "(default times)" : col.key === "home_room" ? "(any room)" : "(choose)"}</option>
             {choices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         ) : (
           <input aria-label="new value" value={text} onChange={(e) => setText(e.target.value)}
             placeholder={col?.kind === "ids" ? "S1, S2" : col?.kind === "sessions" ? "1, 1, 1" : ""} />
         )}
-        <button type="button" className="btn small" disabled={!col || (col.kind !== "text" && text === "" && col.key !== "group_of" && col.key !== "clock")}
+        <button type="button" className="btn small" disabled={!col || (col.kind !== "text" && text === "" && col.key !== "group_of" && col.key !== "clock" && col.key !== "home_room")}
           onClick={() => { onSet(key, text); }}>Apply</button>
       </span>
       <button type="button" className="btn small" onClick={onDuplicate}>Duplicate</button>

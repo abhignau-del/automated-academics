@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Named home rooms.** A class can be given a *Home room* (Classes table, or `home_room` in the workbook, by id or room name). Its
+  classroom lectures then go in that room only. Labs, halls and a class's practical sub-groups are unaffected, and a joint lecture of
+  classes with different home rooms may use any suitable classroom (the checks note it). The checks report a home room that is too small
+  or overbooked and a pin outside the home room; moving a lecture out of it by hand is flagged as a conflict. Renaming a room keeps its
+  classes there; deleting it sends them back to "any room". Existing data is unchanged.
+
 ## v0.13.0 (2026-10-26)
 
 Holidays and exam weeks in calendar files, and a clearer early/late-lectures check. Existing data, workbooks and databases keep working; databases gain `no_class` on `publications` in place.

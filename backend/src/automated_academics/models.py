@@ -181,6 +181,9 @@ class Batch(BaseModel):
     group_of: str | None = None
     # Name of one of `Calendar.clocks` when this class keeps different hours; None = the institution's own times.
     clock: str | None = None
+    # The room this class "lives in": the classroom lectures of the whole class go there and nowhere else. A practical
+    # sub-group does not inherit it (its groups often meet at the same time, in different rooms). None = any suitable classroom.
+    home_room: str | None = None
 
 
 class Course(BaseModel):
@@ -259,7 +262,22 @@ class Institution(BaseModel):
                 raise ValueError(f"{b.id}: unknown parent batch {b.group_of}")
             if b.clock is not None and b.clock not in self.calendar.clocks:
                 raise ValueError(f"{b.id}: unknown clock {b.clock!r}")
+            if b.home_room is not None and b.home_room not in room_ids:
+                raise ValueError(f"{b.id}: unknown home room {b.home_room!r}")
         return self
+
+    def home_room_of_batch(self, batch_id: str) -> str | None:
+        """The room a class lives in; None = no home room."""
+        return next((b.home_room for b in self.batches if b.id == batch_id), None)
+
+    def home_room_of(self, batch_ids: list[str]) -> str | None:
+        """The one room the classes attending together agree on, or None when none has a home room or they disagree.
+
+        Classes that have no home room go along with one that has; classes with different home rooms cannot all be at
+        home, so such a joint lecture may use any suitable room.
+        """
+        homes = {h for h in (self.home_room_of_batch(b) for b in batch_ids) if h}
+        return next(iter(homes)) if len(homes) == 1 else None
 
     def clock_of_batch(self, batch_id: str) -> str | None:
         """The clock a class keeps: its own, or (for a practical group) its parent's; None = the default."""

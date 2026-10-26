@@ -14,14 +14,14 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from .models import Institution, Timetable
+from .models import Institution, RoomKind, Timetable
 
 
 @dataclass(frozen=True)
 class Conflict:
     message: str
     offering_ids: tuple[str, ...]
-    kind: str = "other"  # teacher | class | room | unavailable | overload | room-size | block | missing | invalid
+    kind: str = "other"  # teacher | class | room | unavailable | overload | room-size | home-room | block | missing | invalid
 
 
 _KIND = {"F": "teacher", "B": "class", "R": "room"}
@@ -97,6 +97,11 @@ def find_conflict_details(inst: Institution, tt: Timetable) -> list[Conflict]:
         if rooms[p.room_id].capacity < total:
             out.append(Conflict(f"{label} on {when(p.day, p.start, p.length, p.offering_id)}: {rooms[p.room_id].name} seats "
                                 f"{rooms[p.room_id].capacity} but {total} students attend.", (p.offering_id,), "room-size"))
+        course = courses.get(off.course_code)
+        home = inst.home_room_of(off.batch_ids) if course is not None and course.room_kind is RoomKind.CLASSROOM else None
+        if home is not None and p.room_id != home and home in rooms:
+            out.append(Conflict(f"{label} on {when(p.day, p.start, p.length, p.offering_id)}: its class lives in {rooms[home].name}, "
+                                f"but this is in {rooms[p.room_id].name}.", (p.offering_id,), "home-room"))
         fac_load[(off.faculty_id, p.day)] += p.length
         fac_offerings[(off.faculty_id, p.day)].add(p.offering_id)
 

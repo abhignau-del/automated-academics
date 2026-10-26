@@ -14,9 +14,9 @@ const base = (): Institution => ({
     { id: "F2", name: "Ravi", department: "CS", unavailable: [], avoid: [], max_lectures_per_day: 6 },
   ],
   batches: [
-    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null, clock: null },
-    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S", clock: null },
-    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null, clock: null },
+    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null, clock: null, home_room: null },
+    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S", clock: null, home_room: null },
+    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null, clock: null, home_room: null },
   ],
   courses: [
     { code: "C1", name: "Maths", department: "CS", credits: 3, category: "DSC", room_kind: "classroom" },
@@ -222,5 +222,30 @@ describe("pins follow the data they refer to", () => {
   it("deleting a room keeps the pinned time but frees the room choice", () => {
     const out = removeRow(pinned(), "rooms", 0);
     expect(out.pins[0]).toMatchObject({ offering_id: "O1", day: 0, room_id: null });
+  });
+});
+
+describe("home rooms follow their room", () => {
+  const withHome = (): Institution => {
+    const inst = base();
+    return {
+      ...inst,
+      rooms: [...inst.rooms, { id: "R2", name: "Room 2", capacity: 60, kind: "classroom" }],
+      batches: inst.batches.map((b) => (b.id === "S" ? { ...b, home_room: "R2" } : b)),
+    };
+  };
+  it("renaming a room moves the classes that live in it", () => {
+    const out = renameId(withHome(), "rooms", "R2", "R9");
+    expect(out.batches.find((b) => b.id === "S")?.home_room).toBe("R9");
+    expect(out.batches.find((b) => b.id === "T")?.home_room ?? null).toBeNull();
+  });
+  it("deleting a room sends its classes back to 'any room'", () => {
+    const inst = withHome();
+    const out = removeRow(inst, "rooms", inst.rooms.findIndex((r) => r.id === "R2"));
+    expect(out.batches.find((b) => b.id === "S")?.home_room).toBeNull();
+  });
+  it("a new class has no home room", () => {
+    const out = addRow(base(), "batches");
+    expect(out.batches[out.batches.length - 1].home_room).toBeNull();
   });
 });

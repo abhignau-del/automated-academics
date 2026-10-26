@@ -23,6 +23,7 @@ export interface Batch {
   id: string; program: string; level: "UG" | "PG"; semester: number; section: string;
   department: string; strength: number; group_of: string | null;
   clock?: string | null; // a name from calendar.clocks; null = the institution's own times
+  home_room?: string | null; // a room id: this class's classroom lectures go only there; null = any suitable classroom
 }
 export interface Course {
   code: string; name: string; department: string; credits: number; category: string; room_kind: RoomKind;

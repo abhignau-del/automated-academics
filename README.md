@@ -55,7 +55,16 @@ The last two are off until you give them a weight (**Data → Settings → What 
 give the same timetables as before. For `odd_hours`, the same screen says how many of a day's first lectures count as early and how
 many of its last count as late (one each by default; `early_lectures` and `late_lectures` in the workbook). These are lecture
 positions, so a class on its own clock follows its own hours. On the sample institution, weights of 10 for both took the extra
-classrooms from 24 to 0 and the early or late lectures from 8 to 0.
+classrooms from 24 to 0 and the early or late lectures from 8 to 0. If classes are loaded so fully that early or late slots
+cannot be avoided, the checks say how many are unavoidable.
+
+**Home rooms.** For a class that really does live in one room, choose it in the Classes table (*Home room*). The class's classroom
+lectures then go in that room and nowhere else, which is firmer than the stay-in-one-room goal above. Labs and halls are not
+affected, and neither are a class's practical sub-groups, which often meet at the same time in different rooms (give a sub-group
+its own home room if it needs one). Classes that share a lecture and live in different rooms can't all be at home, so that lecture may
+use any suitable classroom (the checks note it). The checks also report a home room that is too small, or one shared by classes who
+together need more lectures than it has slots; moving a lecture out of the home room by hand is flagged as a conflict. On a real management
+institute's data (nine classes, each given the smallest classroom that seats it) the solver still found a clash-free optimum in 13 seconds.
 
 On the sample institution, compared with a solver that ignores these goals (what v0.1.0 produced):
 
@@ -338,7 +347,8 @@ Start from [docs/institution-template.xlsx](docs/institution-template.xlsx) (fic
 and replace the rows with your own. One sheet per entity: `Institution`, `Rooms`, `Faculty`,
 `Batches`, `Courses`, `Offerings`. Lectures are numbered from 1 and days are written by name
 (e.g. unavailable = `Mon:1, Tue:3`). A shared elective lists several batches in `batch_ids`;
-a lab sub-group sets `group_of` to its parent batch.
+a lab sub-group sets `group_of` to its parent batch. A class that lives in one room names it in `home_room` (an id or the
+room's name).
 
 ```bash
 python -m automated_academics.cli check my-data.xlsx
@@ -488,7 +498,8 @@ font such as Noto Sans.
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [x] Goals for keeping a class in one classroom and avoiding early or late lectures (off by default)
-- [ ] Further goals: named home rooms, consecutive-day spacing
+- [x] Named home rooms
+- [ ] Further goals: consecutive-day spacing
 - [ ] Whole-university scale: decomposition across departments, measured on larger data
 
 ## Data and privacy

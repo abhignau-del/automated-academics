@@ -17,9 +17,9 @@ const base = (): Institution => ({
     { id: "F2", name: "Ravi Iyer", department: "CS", unavailable: [], avoid: [], max_lectures_per_day: 6 },
   ],
   batches: [
-    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null, clock: null },
-    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S", clock: null },
-    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null, clock: null },
+    { id: "S", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 60, group_of: null, clock: null, home_room: null },
+    { id: "S-A", program: "BSc", level: "UG", semester: 1, section: "A", department: "CS", strength: 30, group_of: "S", clock: null, home_room: null },
+    { id: "T", program: "BSc", level: "UG", semester: 3, section: "A", department: "CS", strength: 50, group_of: null, clock: null, home_room: null },
   ],
   courses: [
     { code: "C1", name: "Maths", department: "CS", credits: 3, category: "DSC", room_kind: "classroom" },
@@ -310,5 +310,27 @@ describe("column definitions", () => {
       expect(shownColumns(table).every((c) => c.shown !== false)).toBe(true);
     }
     expect(shownColumns("faculty").map((c) => c.key)).toEqual(["id", "name", "department", "max_lectures_per_day"]);
+  });
+});
+
+describe("home room column", () => {
+  const inst = (): Institution => ({
+    ...base(),
+    rooms: [
+      { id: "C1", name: "Classroom 1", capacity: 60, kind: "classroom" },
+      { id: "L1", name: "Lab 1", capacity: 30, kind: "lab" },
+      { id: "H1", name: "Hall", capacity: 200, kind: "hall" },
+    ],
+  });
+  it("offers classrooms and halls but not labs, and matches by name", () => {
+    const opts = optionsFor(inst(), "batches", "home_room")!;
+    expect(opts.map((o) => o.value)).toEqual(["C1", "H1"]);
+    expect(matchOption(opts, "classroom 1")).toBe("C1");
+  });
+  it("pasting a blank clears it and a room name sets it", () => {
+    const set = bulkSet(inst(), "batches", ["S"], "home_room", "classroom 1");
+    expect(set.inst.batches.find((b) => b.id === "S")?.home_room).toBe("C1");
+    const cleared = bulkSet(set.inst, "batches", ["S"], "home_room", "");
+    expect(cleared.inst.batches.find((b) => b.id === "S")?.home_room).toBeNull();
   });
 });

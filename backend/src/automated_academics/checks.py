@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .models import Institution
-from .solver import _room_ok
+from .solver import _room_ok, home_room_for
 
 # table (as it appears in the JSON) -> the field that identifies a row
 ID_FIELD = {"rooms": "id", "faculty": "id", "batches": "id", "courses": "code", "offerings": "id"}
@@ -164,8 +164,14 @@ def diagnose(inst: Institution) -> list[Issue]:
         course = courses[o.course_code]
         used_courses.add(o.course_code)
         strength = sum(batches[b].strength for b in o.batch_ids)
-        eligible = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength)]
-        if not eligible:
+        home = home_room_for(inst, o.batch_ids, course.room_kind)
+        eligible = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength) and (home is None or r.id == home)]
+        if home and not eligible:
+            hr = next(r for r in inst.rooms if r.id == home)
+            err("offerings", oi, "batch_ids",
+                f"{o.id}: its class lives in {hr.name} ({hr.capacity} seats), which cannot take {strength} students "
+                f"for a {course.room_kind.value} lecture")
+        elif not eligible:
             kind_ok = [r for r in inst.rooms if _room_ok(r, course.room_kind, 0)]
             biggest = max((r.capacity for r in kind_ok), default=None)
             have = f"the largest has {biggest} seats" if biggest else "there are none"
@@ -224,6 +230,13 @@ def diagnose(inst: Institution) -> list[Issue]:
     if any(b >= lectures - 1 for b in cal.break_after):
         note("warning", "settings", None, "calendar.break_after", "a break after the last lecture has no effect")
 
+    for oi, o in enumerate(inst.offerings):
+        homes = sorted({h for h in (inst.home_room_of_batch(b) for b in o.batch_ids) if h})
+        if len(homes) > 1 and courses[o.course_code].room_kind.value == "classroom":
+            names = {r.id: r.name for r in inst.rooms}
+            note("info", "offerings", oi, "batch_ids",
+                 f"{o.id}: its classes live in different rooms ({', '.join(names[h] for h in homes)}), "
+                 f"so this joint lecture may use any suitable classroom")
     if inst.weights.odd_hours > 0:
         odd = len(cal.odd_lectures())
         middle = days * (lectures - odd)
@@ -316,6 +329,11 @@ def _pin_problems(inst: Institution) -> list[Issue]:
             if not _room_ok(rooms[p.room_id], courses[o.course_code].room_kind, strength):
                 out.append(Issue("error", "pins", pi, "room_id",
                                  f"{tag} is pinned to {rooms[p.room_id].name}, which is the wrong kind of room or too small"))
+            else:
+                home = home_room_for(inst, o.batch_ids, courses[o.course_code].room_kind)
+                if home and home != p.room_id:
+                    out.append(Issue("error", "pins", pi, "room_id",
+                                     f"{tag} is pinned to {rooms[p.room_id].name}, but its class lives in {rooms[home].name}"))
         keys = [("F", o.faculty_id)] + [("B", b) for b in inst.occupied_batches(o.batch_ids)]
         if p.room_id is not None:
             keys.append(("R", p.room_id))
@@ -345,7 +363,9 @@ def _room_demand(inst: Institution) -> list[Issue]:
     by_set: dict[frozenset[str], list[tuple[int, str]]] = defaultdict(list)
     for o in inst.offerings:
         strength = sum(batches[b].strength for b in o.batch_ids)
-        eligible = frozenset(r.id for r in inst.rooms if _room_ok(r, courses[o.course_code].room_kind, strength))
+        home = home_room_for(inst, o.batch_ids, courses[o.course_code].room_kind)
+        eligible = frozenset(r.id for r in inst.rooms if _room_ok(r, courses[o.course_code].room_kind, strength)
+                             and (home is None or r.id == home))
         if eligible:  # sessions with no eligible room are already reported on their offering
             by_set[eligible].append((sum(o.sessions), o.id))
     out: list[Issue] = []

@@ -6,7 +6,7 @@ Workbook layout (one header row, then data rows; header names are case-insensiti
                                     and optional weight_<goal> rows, see below)
   Rooms       : id, name, capacity, kind
   Faculty     : id, name, department, max_lectures_per_day, unavailable, avoid
-  Batches     : id, program, level, semester, section, department, strength, group_of
+  Batches     : id, program, level, semester, section, department, strength, group_of, clock, home_room
   Courses     : code, name, department, credits, category, room_kind
   Offerings   : id, course_code, faculty_id, batch_ids, sessions
 
@@ -54,7 +54,7 @@ from .quality import METRICS
 SHEETS: dict[str, list[str]] = {
     "Rooms": ["id", "name", "capacity", "kind"],
     "Faculty": ["id", "name", "department", "max_lectures_per_day", "unavailable", "avoid"],
-    "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of", "clock"],
+    "Batches": ["id", "program", "level", "semester", "section", "department", "strength", "group_of", "clock", "home_room"],
     "Courses": ["code", "name", "department", "credits", "category", "room_kind"],
     "Offerings": ["id", "course_code", "faculty_id", "batch_ids", "sessions"],
 }
@@ -93,6 +93,18 @@ class ImportErrors(ValueError):
 
 def _text(v: Any) -> str:
     return "" if v is None else str(v).strip()
+
+
+def _room_ref(v: Any, rooms: list[Room]) -> str | None:
+    """A room written by id or by name; text that matches neither is kept so the check reports it as an unknown room."""
+    s = _text(v)
+    if not s:
+        return None
+    for r in rooms:
+        if s == r.id:
+            return r.id
+    low = s.lower()
+    return next((r.id for r in rooms if r.name.lower() == low or r.id.lower() == low), s)
 
 
 def _int(v: Any, field: str) -> int:
@@ -260,7 +272,8 @@ def import_workbook(path: str | Path | BinaryIO) -> Institution:
         id=_text(r["id"]), program=_text(r["program"]), level=_enum(Level, r["level"], "level"),
         semester=_int(r["semester"], "semester"), section=_text(r.get("section")) or "A",
         department=_text(r["department"]), strength=_int(r["strength"], "strength"),
-        group_of=_text(r.get("group_of")) or None, clock=_text(r.get("clock")) or None))
+        group_of=_text(r.get("group_of")) or None, clock=_text(r.get("clock")) or None,
+        home_room=_room_ref(r.get("home_room"), rooms)))
 
     courses = _collect(wb["Courses"], "Courses", issues, lambda r: Course(
         code=_text(r["code"]), name=_text(r["name"]), department=_text(r["department"]),
@@ -377,7 +390,7 @@ def export_workbook(inst: Institution, path: str | Path | BinaryIO) -> None:
     sheet("Faculty", [[f.id, f.name, f.department, f.max_lectures_per_day,
                        slot_text(f.unavailable), slot_text(f.avoid)] for f in inst.faculty])
     sheet("Batches", [[b.id, b.program, b.level.value, b.semester, b.section, b.department,
-                       b.strength, b.group_of or "", b.clock or ""] for b in inst.batches])
+                       b.strength, b.group_of or "", b.clock or "", b.home_room or ""] for b in inst.batches])
     sheet("Courses", [[c.code, c.name, c.department, c.credits, c.category, c.room_kind.value]
                       for c in inst.courses])
     sheet("Offerings", [[o.id, o.course_code, o.faculty_id, ", ".join(o.batch_ids),

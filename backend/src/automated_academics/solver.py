@@ -58,6 +58,11 @@ class TimedOut(InfeasibleError):
     """No timetable was found in the time given; one may exist."""
 
 
+def home_room_for(inst: Institution, batch_ids: list[str], kind: RoomKind) -> str | None:
+    """The room a lecture is tied to by its classes' home rooms. Only classroom lectures are: labs and halls are shared."""
+    return inst.home_room_of(batch_ids) if kind is RoomKind.CLASSROOM else None
+
+
 def _room_ok(room: Room, needed: RoomKind, strength: int) -> bool:
     if room.capacity < strength:
         return False
@@ -133,7 +138,9 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
             continue
         course = courses[off.course_code]
         strength = sum(batches[b].strength for b in off.batch_ids)
+        home = home_room_for(inst, off.batch_ids, course.room_kind)
         rooms = [r for r in inst.rooms if _room_ok(r, course.room_kind, strength)
+                 and (home is None or r.id == home)
                  and (room_ids is None or r.id in room_ids)]
         fac = faculty[off.faculty_id]
         blocked = {(s.day, s.lecture) for s in fac.unavailable}

@@ -40,7 +40,7 @@ export function addRow(inst: Institution, table: TableKey): Institution {
         ...inst,
         batches: [...inst.batches, {
           id, program: last?.program ?? "", level: last?.level ?? "UG", semester: last?.semester ?? 1,
-          section: "A", department: last?.department ?? "", strength: 60, group_of: null, clock: null,
+          section: "A", department: last?.department ?? "", strength: 60, group_of: null, clock: null, home_room: null,
         }],
       };
     }
@@ -82,7 +82,11 @@ export function renameId(inst: Institution, table: TableKey, oldId: string, newI
     return { ...renamed, pins: renamed.pins.map((p) => ({ ...p, offering_id: swap(p.offering_id) })) };
   }
   if (table === "rooms") {
-    return { ...renamed, pins: renamed.pins.map((p) => ({ ...p, room_id: p.room_id === null ? null : swap(p.room_id) })) };
+    return {
+      ...renamed,
+      pins: renamed.pins.map((p) => ({ ...p, room_id: p.room_id === null ? null : swap(p.room_id) })),
+      batches: renamed.batches.map((b) => (b.home_room === oldId ? { ...b, home_room: newId } : b)),
+    };
   }
   if (table === "faculty") {
     return { ...renamed, offerings: renamed.offerings.map((o) => ({ ...o, faculty_id: swap(o.faculty_id) })) };
@@ -153,6 +157,7 @@ export function removeRow(inst: Institution, table: TableKey, index: number): In
   return {
     ...out,
     pins: out.pins.filter((p) => alive.has(p.offering_id)).map((p) => (p.room_id !== null && !rooms.has(p.room_id) ? { ...p, room_id: null } : p)),
+    batches: out.batches.map((b) => (b.home_room && !rooms.has(b.home_room) ? { ...b, home_room: null } : b)),
   };
 }
 
