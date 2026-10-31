@@ -205,7 +205,7 @@ docker compose up -d        # then open http://localhost:8000
 Without Docker: `AA_AUTH=1 AA_STATIC=frontend/dist-app AA_DB=/path/to/data.db python -m uvicorn
 automated_academics.api:create_app --factory --port 8000` (build the screen first with `npm run build:app` in
 `frontend/`). Put it behind HTTPS (a reverse proxy such as Caddy or nginx) and set `AA_COOKIE_SECURE=1` so the
-sign-in cookie is sent only securely. Back up the one data file (`/data/automated_academics.db` in the container).
+sign-in cookie is sent only securely. Back up with **Back up and restore…** in the administrator's account menu (see Backups below); the data is one file, `/data/automated_academics.db` in the container.
 
 What this does and does not do: passwords are stored as salted hashes and a sign-in is a random token kept in an
 HttpOnly cookie; guessing passwords is slowed down; every request is checked on the server. There is **no password
@@ -495,7 +495,8 @@ password-reset links are left out, but accounts and their scrambled passwords ar
 **Restore** takes such a file and replaces everything with it. The app first checks that it is a usable backup (and says what
 it holds), refuses while a timetable is being generated, saves a copy of the current data in a `backups` folder next to the
 database (the last five are kept), upgrades a backup from an older version, and signs everyone out; they sign in again with the
-accounts in the backup. Use the app's own download rather than copying the database file by hand while the app is running. The
+accounts in the backup. Behind a reverse proxy, raise its upload limit to at least the backup's size before restoring (nginx
+refuses bodies over 1 MB unless `client_max_body_size` is raised; Caddy has no such limit by default). Use the app's own download rather than copying the database file by hand while the app is running. The
 Docker setup keeps the database in the `aa-data` volume, so back up through the app or copy that volume.
 
 Published links also show when each was **last opened** (to the minute, at most one write a minute), so you can see which are

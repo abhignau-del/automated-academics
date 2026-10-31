@@ -47,6 +47,19 @@ jobs:
           curl -fs http://127.0.0.1:8000/auth/status | tee /dev/stderr | grep -q '"setup_needed":true'
           curl -fs http://127.0.0.1:8000/ | grep -q 'id="root"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/institutions)" = 401
+      - name: Back up and restore as the container's own user (writes to /data, shared mode, first administrator)
+        run: |
+          set -e
+          J=$(mktemp); W=$(mktemp -d)
+          curl -fs -c "$J" -H 'Content-Type: application/json' -d '{"username":"root","password":"correct horse battery"}' "http://127.0.0.1:8000/auth/setup" > /dev/null
+          curl -fs -b "$J" "http://127.0.0.1:8000/institutions/starter?kind=sample" > "$W/sample.json"
+          curl -fs -b "$J" -H 'Content-Type: application/json' -d @"$W/sample.json" "http://127.0.0.1:8000/institutions" > /dev/null
+          curl -fs -b "$J" -o "$W/backup.db" "http://127.0.0.1:8000/admin/backup"
+          head -c 15 "$W/backup.db" | grep -q 'SQLite format 3'
+          curl -fs -b "$J" -X POST -H 'Content-Type: application/octet-stream' --data-binary @"$W/backup.db" "http://127.0.0.1:8000/admin/restore?dry_run=true" | grep -q '"institutions":1'
+          curl -fs -b "$J" -X POST -H 'Content-Type: application/octet-stream' --data-binary @"$W/backup.db" "http://127.0.0.1:8000/admin/restore" | grep -q '"restored":true'
+          docker exec aa ls /data/backups | grep -q before-restore
+          if docker logs aa 2>&1 | grep -iE 'traceback|error'; then echo 'the container logged an error'; exit 1; fi
 
   e2e:
     # Real-browser journeys: the built screen and the engine on one address, driven the way a person would.
