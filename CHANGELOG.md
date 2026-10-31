@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.16.0 (2026-11-01)
+
+Housekeeping: activity-log clean-up, backup and restore of all the data, and when each published link was last opened. Existing data, workbooks and databases keep working.
 
 - **Housekeeping.** (1) *Activity log clean-up:* an administrator can **Delete older entries** (30 days or more are kept) or set
   `AA_AUDIT_KEEP_DAYS`; the newest entry always stays and the log still verifies, noting that older entries were removed on purpose.
