@@ -122,6 +122,31 @@ def test_a_joint_lecture_of_classes_with_different_homes_is_a_note_not_an_error(
     assert not [m for m in errors(inst) if "JOINT" in m]
 
 
+def test_many_such_joint_lectures_make_one_note_that_names_a_few():
+    from automated_academics.models import Offering
+    inst = homed(**{"CS-UG1": "C1", "MG-UG1": "C2"})
+    course = next(c for c in inst.courses if c.room_kind is RoomKind.CLASSROOM)
+    def joint(n):
+        return [Offering(id=f"J{i}", course_code=course.code, faculty_id=inst.faculty[0].id, batch_ids=["CS-UG1", "MG-UG1"], sessions=[1])
+                for i in range(1, n + 1)]
+    def notes():
+        return [d for d in diagnose(inst) if "different rooms" in d.message]
+    inst.offerings += joint(2)
+    found = notes()
+    assert len(found) == 1 and "2 joint lectures" in found[0].message and "(J1, J2)" in found[0].message
+    inst.offerings = inst.offerings[:-2] + joint(5)
+    found = notes()
+    assert len(found) == 1 and "5 joint lectures" in found[0].message and "(J1, J2, J3 and 2 more)" in found[0].message
+    assert found[0].section == "offerings" and found[0].level == "info"
+    assert found[0].index == next(i for i, o in enumerate(inst.offerings) if o.id == "J1")  # points at the first of them
+    for n, shown in ((3, "(J1, J2, J3)"), (4, "(J1, J2, J3 and 1 more)")):  # the edges of "names a few"
+        inst.offerings = [o for o in inst.offerings if not o.id.startswith("J")] + joint(n)
+        assert shown in notes()[0].message and (n == 3) == ("more" not in notes()[0].message)
+    inst.offerings = [o for o in inst.offerings if not o.id.startswith("J")] + joint(5)
+    inst.offerings = inst.offerings[:-5]
+    assert not notes()  # none left: nothing said
+
+
 def test_a_pin_to_another_room_than_home_is_reported_and_the_home_room_is_accepted():
     inst = homed(**{"CS-UG1": "C1"})
     off = next(o for o in inst.offerings if o.batch_ids == ["CS-UG1"]

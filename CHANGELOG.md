@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Fewer repeated notes.** When several joint lectures bring together classes that live in different rooms, the checks now say so once
+  (naming the first three) instead of once per lecture.
+
 ## v0.16.0 (2026-11-01)
 
 Housekeeping: activity-log clean-up, backup and restore of all the data, and when each published link was last opened. Existing data, workbooks and databases keep working.

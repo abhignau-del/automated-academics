@@ -230,13 +230,22 @@ def diagnose(inst: Institution) -> list[Issue]:
     if any(b >= lectures - 1 for b in cal.break_after):
         note("warning", "settings", None, "calendar.break_after", "a break after the last lecture has no effect")
 
+    room_names = {r.id: r.name for r in inst.rooms}
+    apart_homes = []  # (index, offering, the home rooms of its classes) for joint lectures whose classes live in different rooms
     for oi, o in enumerate(inst.offerings):
         homes = sorted({h for h in (inst.home_room_of_batch(b) for b in o.batch_ids) if h})
         if len(homes) > 1 and courses[o.course_code].room_kind.value == "classroom":
-            names = {r.id: r.name for r in inst.rooms}
-            note("info", "offerings", oi, "batch_ids",
-                 f"{o.id}: its classes live in different rooms ({', '.join(names[h] for h in homes)}), "
-                 f"so this joint lecture may use any suitable classroom")
+            apart_homes.append((oi, o, homes))
+    if len(apart_homes) == 1:
+        oi, o, homes = apart_homes[0]
+        note("info", "offerings", oi, "batch_ids",
+             f"{o.id}: its classes live in different rooms ({', '.join(room_names[h] for h in homes)}), "
+             f"so this joint lecture may use any suitable classroom")
+    elif apart_homes:  # one line, not one per lecture
+        shown = ", ".join(o.id for _, o, _ in apart_homes[:3]) + (f" and {len(apart_homes) - 3} more" if len(apart_homes) > 3 else "")
+        note("info", "offerings", apart_homes[0][0], "batch_ids",
+             f"{len(apart_homes)} joint lectures bring together classes that live in different rooms, so they may use any suitable "
+             f"classroom ({shown})")
     if inst.weights.day_spacing > 0:
         apart = (days + 1) // 2  # the most days of the week that can all be kept apart from each other
         crowded = {o.id: len(o.sessions) - apart for o in inst.offerings if len(o.sessions) > apart}
