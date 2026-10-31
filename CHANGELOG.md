@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.16.1 (2026-11-01)
+
+A small tidy-up of the checks. Nothing else changes; existing data, workbooks and databases keep working.
 
 - **Fewer repeated notes.** When several joint lectures bring together classes that live in different rooms, the checks now say so once
   (naming the first three) instead of once per lecture.
