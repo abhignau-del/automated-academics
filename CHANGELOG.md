@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.15.0 (2026-10-31)
+
+A goal for spreading a course's sessions over the week. Existing data, workbooks and databases keep working; the goal is off until weighted.
 
 - **Course spacing.** A new goal, *Course spacing* (`day_spacing`, off until weighted; `weight_day_spacing` in the workbook), penalises each
   pair of consecutive days on which the same course meets, so a course's sessions are spread over the week (Mon + Thu rather than Mon + Tue).
