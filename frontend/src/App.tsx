@@ -28,6 +28,7 @@ const GOALS: { key: keyof Quality; label: string; hint: string }[] = [
   { key: "avoid_slot", label: "Avoided slots used", hint: "Lectures placed where a teacher asked not to teach" },
   { key: "room_changes", label: "Extra classrooms", hint: "Classrooms a class uses for its theory lectures beyond the first, added up" },
   { key: "odd_hours", label: "Early / late lectures", hint: "Class lectures in the first or last slots of the day (set in the settings)" },
+  { key: "day_spacing", label: "Back-to-back days", hint: "Pairs of consecutive days on which the same course meets, added up" },
 ];
 
 /** How good the timetable is on the soft goals. With unsaved edits, shows the change since the saved version. */

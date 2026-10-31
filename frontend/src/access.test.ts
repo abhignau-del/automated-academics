@@ -30,7 +30,7 @@ describe("department scope", () => {
       { id: "B2", program: "P", level: "UG", semester: 1, section: "A", department: "MG", strength: 30, group_of: null },
     ],
     courses: [{ code: "C1", name: "X", department: "", credits: 3, category: "DSC", room_kind: "classroom" }],
-    offerings: [], weights: { repeat_course_day: 1, batch_gaps: 1, faculty_gaps: 1, peak_day_load: 1, avoid_slot: 1, room_changes: 0, odd_hours: 0 }, pins: [],
+    offerings: [], weights: { repeat_course_day: 1, batch_gaps: 1, faculty_gaps: 1, peak_day_load: 1, avoid_slot: 1, room_changes: 0, odd_hours: 0, day_spacing: 0 }, pins: [],
   } as unknown as Institution;
 
   it("reads a person's scope from the institution list", () => {

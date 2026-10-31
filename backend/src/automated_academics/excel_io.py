@@ -17,7 +17,7 @@ For humans, lectures are numbered from 1 and days are written by name:
 `unavailable` is a hard rule; `avoid` (same format, optional column) is a preference the solver
 honours when it can. Optional Institution rows `weight_batch_gaps`, `weight_faculty_gaps`,
 `weight_peak_day_load`, `weight_repeat_course_day`, `weight_avoid_slot`, `weight_room_changes` and
-`weight_odd_hours` set how much each
+`weight_odd_hours` and `weight_day_spacing` set how much each
 soft goal matters (whole numbers, 0 switches a goal off; blank uses the default).
 """
 

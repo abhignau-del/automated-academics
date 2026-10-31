@@ -22,6 +22,7 @@ Soft goals (minimised as a weighted sum; weights live on `Institution.weights`)
   * avoid_slot         lectures in slots a faculty member asked to avoid
   * room_changes       a class using several classrooms for its theory lectures (off unless weighted)
   * odd_hours          class lectures in the calendar's early or late slots (off unless weighted)
+  * day_spacing        pairs of consecutive days on which the same course meets (off unless weighted)
 
 `quality.measure` computes the same quantities independently from a finished
 timetable; tests check the two agree.
@@ -371,6 +372,19 @@ def solve(inst: Institution, time_limit_s: float = 30.0, workers: int = 8,
                 ex = model.NewIntVar(0, len(lits) - 1, f"ex_{oid}_{d}")
                 model.AddMaxEquality(ex, [sum(lits) - 1, 0])  # exactly max(0, sessions that day - 1)
                 terms["repeat_course_day"].append(ex)
+
+    if w.day_spacing:
+        for oid in {oid for oid, _ in per_day}:
+            has: dict[int, cp_model.IntVar] = {}
+            for d in range(n_days):
+                if per_day.get((oid, d)):
+                    has[d] = model.NewBoolVar(f"has_{oid}_{d}")
+                    model.AddMaxEquality(has[d], per_day[(oid, d)])  # the course meets on day d
+            for d in range(n_days - 1):
+                if d in has and d + 1 in has:
+                    both = model.NewBoolVar(f"adj_{oid}_{d}")
+                    model.AddMinEquality(both, [has[d], has[d + 1]])  # it meets on d and the next day
+                    terms["day_spacing"].append(both)
 
     leaves = [b for b in inst.leaf_batches() if b in free_batches]
     if w.batch_gaps:

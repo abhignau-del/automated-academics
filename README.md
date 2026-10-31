@@ -50,13 +50,18 @@ Beyond "no clashes", the solver minimises a weighted sum of soft goals (five on 
 | `avoid_slot` | lectures in slots a teacher listed under `avoid` | 6 |
 | `room_changes` | classrooms a class uses for its theory lectures beyond the first, so a class tends to stay in one room (labs and halls don't count) | 0 (off) |
 | `odd_hours` | class lectures in the first or last slots of the day | 0 (off) |
+| `day_spacing` | pairs of consecutive days (Mon + Tue, not Fri + Mon) on which the same course meets, so a course's sessions are spread out | 0 (off) |
 
-The last two are off until you give them a weight (**Data → Settings → What makes a good timetable**), so existing institutions
+The last three are off until you give them a weight (**Data → Settings → What makes a good timetable**), so existing institutions
 give the same timetables as before. For `odd_hours`, the same screen says how many of a day's first lectures count as early and how
 many of its last count as late (one each by default; `early_lectures` and `late_lectures` in the workbook). These are lecture
 positions, so a class on its own clock follows its own hours. On the sample institution, weights of 10 for both took the extra
 classrooms from 24 to 0 and the early or late lectures from 8 to 0. If classes are loaded so fully that early or late slots
-cannot be avoided, the checks say how many are unavoidable.
+cannot be avoided, the checks say how many are unavoidable. The same goes for `day_spacing`: a course can keep at most half the
+week's days (rounded up) apart from each other, so a course with more sessions than that must double up on a day or meet on
+consecutive days, and the checks count how many sessions that affects. Spacing competes with *Repeated courses*: give it a weight
+below that one if you would rather a course meet on consecutive days than twice in one day. On the sample institution a weight of 10
+took the consecutive-day pairs from 24 to 0.
 
 **Home rooms.** For a class that really does live in one room, choose it in the Classes table (*Home room*). The class's classroom
 lectures then go in that room and nowhere else, which is firmer than the stay-in-one-room goal above. Labs and halls are not
@@ -494,12 +499,12 @@ font such as Noto Sans.
 - [x] Activity log (tamper-evident, per institution and for administrators)
 - [x] Password reset by e-mail (optional, needs a mail server)
 - [ ] Single sign-on
-- [x] Browser tests in CI (thirteen journeys driving the real app)
+- [x] Browser tests in CI (fifteen journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [x] Goals for keeping a class in one classroom and avoiding early or late lectures (off by default)
 - [x] Named home rooms
-- [ ] Further goals: consecutive-day spacing
+- [x] Consecutive-day spacing
 - [ ] Whole-university scale: decomposition across departments, measured on larger data
 
 ## Data and privacy
@@ -510,7 +515,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (thirteen so far, about 195 checks). Each one starts its own copy of the app with an empty data folder.
+so on (fifteen so far, about 205 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

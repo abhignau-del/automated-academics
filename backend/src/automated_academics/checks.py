@@ -237,6 +237,15 @@ def diagnose(inst: Institution) -> list[Issue]:
             note("info", "offerings", oi, "batch_ids",
                  f"{o.id}: its classes live in different rooms ({', '.join(names[h] for h in homes)}), "
                  f"so this joint lecture may use any suitable classroom")
+    if inst.weights.day_spacing > 0:
+        apart = (days + 1) // 2  # the most days of the week that can all be kept apart from each other
+        crowded = {o.id: len(o.sessions) - apart for o in inst.offerings if len(o.sessions) > apart}
+        if crowded:
+            worst = max(crowded, key=crowded.get)
+            note("info", "settings", None, "weights.day_spacing",
+                 f"the course-spacing goal cannot reach zero here: {len(crowded)} course(s) meet more often than the week has days "
+                 f"kept apart ({apart} of {days}), so at least {sum(crowded.values())} of their sessions must share a day or fall on "
+                 f"consecutive days (most for {worst}: {crowded[worst]})")
     if inst.weights.odd_hours > 0:
         odd = len(cal.odd_lectures())
         middle = days * (lectures - odd)

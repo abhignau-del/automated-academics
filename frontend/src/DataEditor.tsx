@@ -49,6 +49,7 @@ const WEIGHT_FIELDS: { key: keyof Weights; label: string; hint: string }[] = [
   { key: "avoid_slot", label: "Avoided slots", hint: "Penalty per lecture placed where a teacher asked not to teach" },
   { key: "room_changes", label: "Same classroom", hint: "Penalty per extra classroom a class uses for its theory lectures, so a class tends to stay in one room (labs and halls don't count). Off (0) by default" },
   { key: "odd_hours", label: "Early / late lectures", hint: "Penalty per class lecture in the first or last slots of the day (counted just below). Off (0) by default" },
+  { key: "day_spacing", label: "Course spacing", hint: "Penalty per pair of consecutive days on which the same course meets, so a course's sessions are spread out (Mon + Thu rather than Mon + Tue). Off (0) by default" },
 ];
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));

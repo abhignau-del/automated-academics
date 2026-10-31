@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Course spacing.** A new goal, *Course spacing* (`day_spacing`, off until weighted; `weight_day_spacing` in the workbook), penalises each
+  pair of consecutive days on which the same course meets, so a course's sessions are spread over the week (Mon + Thu rather than Mon + Tue).
+  It is measured independently and shown in the quality panel as *Back-to-back days*. The checks say when a course has more sessions than
+  the week has days that can be kept apart, with the number of sessions affected. Existing data gives the same timetables as before.
+
 ## v0.14.0 (2026-10-27)
 
 Named home rooms for classes. Existing data, workbooks and databases keep working; a class has no home room until you choose one.

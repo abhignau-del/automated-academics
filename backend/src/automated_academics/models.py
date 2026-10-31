@@ -163,6 +163,7 @@ class Weights(BaseModel):
     # Off (0) unless chosen, so existing institutions give the same timetables as before.
     room_changes: int = Field(default=0, ge=0)  # per extra classroom a class uses for its theory lectures
     odd_hours: int = Field(default=0, ge=0)  # per lecture a class has in an early or late slot of the day
+    day_spacing: int = Field(default=0, ge=0)  # per pair of consecutive days on which the same course meets
 
 
 class Batch(BaseModel):

@@ -13,6 +13,7 @@ Metrics (lower is better, all in whole lectures or sessions)
   avoid_slot         lectures placed in slots a faculty member asked to avoid
   room_changes       for each class, the classrooms its theory lectures use beyond the first
   odd_hours          class lectures in the calendar's early or late slots of the day
+  day_spacing        pairs of consecutive days (Mon+Tue, not Fri+Mon) on which the same course meets
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from collections import defaultdict
 
 from .models import Institution, RoomKind, Timetable, Weights
 
-METRICS = ("repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot", "room_changes", "odd_hours")
+METRICS = ("repeat_course_day", "batch_gaps", "faculty_gaps", "peak_day_load", "avoid_slot", "room_changes", "odd_hours", "day_spacing")
 
 
 def _gaps(cells: set[tuple[int, int]]) -> int:
@@ -43,6 +44,7 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
     batch_cells: dict[str, set[tuple[int, int]]] = {b: set() for b in leaves}
     fac_cells: dict[str, set[tuple[int, int]]] = defaultdict(set)
     sessions_per_day: dict[tuple[str, int], int] = defaultdict(int)
+    days_of: dict[str, set[int]] = defaultdict(set)
     avoid_hits = 0
 
     for p in tt.placements:
@@ -51,6 +53,7 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
             continue
         covered = [(p.day, t) for t in range(p.start, p.start + p.length)]
         sessions_per_day[(off.id, p.day)] += 1
+        days_of[off.id].add(p.day)
         fac_cells[off.faculty_id].update(covered)
         attending = inst.occupied_batches(off.batch_ids)
         for b in leaves:
@@ -77,6 +80,7 @@ def measure(inst: Institution, tt: Timetable) -> dict[str, int]:
         "avoid_slot": avoid_hits,
         "room_changes": sum(len(rooms) - 1 for rooms in classrooms.values()),
         "odd_hours": sum(1 for cells in batch_cells.values() for _, lecture in cells if lecture in odd),
+        "day_spacing": sum(1 for days in days_of.values() for d in days if d + 1 in days),
     }
 
 
