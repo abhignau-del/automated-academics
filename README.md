@@ -181,8 +181,11 @@ docker compose up -d        # then open http://localhost:8000
    more, and download a CSV (cells that look like formulas are neutralised so a spreadsheet never runs them). Each entry is
    chained to the one before by a SHA-256 hash, so **Verify integrity** reports an entry that was edited or removed behind the
    app's back. It never stores passwords, sign-in tokens or link addresses, and people opening a published link are not logged.
-   If the log cannot be written the action still goes ahead (and the error is logged). There is no deletion and no automatic
-   clean-up: the table grows by a few hundred bytes per action. Nothing is recorded with sign-in off (single user).
+   If the log cannot be written the action still goes ahead (and the error is logged). The table grows by a few hundred bytes
+   per action; an administrator can cut it back with **Delete older entries** at the bottom of the Activity log (at least 30
+   days are kept), or set `AA_AUDIT_KEEP_DAYS` (30 or more) to do it automatically about once a day. The newest entry is never
+   deleted, and the hash of the last deleted one is remembered, so **Verify integrity** still works on what is left and
+   mentions that older entries were removed on purpose. Nothing is recorded with sign-in off (single user).
 8. **Forgotten passwords, by e-mail.** Give the server a mail account and the sign-in screen gains **Forgot your password?**. The
    person types their username or e-mail address; if the account has an address (an administrator fills it in the **E-mail**
    column of **People…**), a link arrives that opens a "choose a new password" page. The link works once and for an hour, a newer
@@ -482,6 +485,22 @@ font such as Noto Sans.
   `max_lectures_per_day`, `Slot.lecture`) before release, so any data created earlier must be
   regenerated from the new template.
 
+## Backups
+
+Everything the app holds (institutions, timetables, accounts, published links, the activity log) lives in one database file.
+**Back up** copies it while the app is running: in the single-user app use **Back up…** in the header, in shared mode an
+administrator uses **Back up and restore…** in the account menu. The download is one `.db` file; sign-in sessions and
+password-reset links are left out, but accounts and their scrambled passwords are in it, so keep it private.
+
+**Restore** takes such a file and replaces everything with it. The app first checks that it is a usable backup (and says what
+it holds), refuses while a timetable is being generated, saves a copy of the current data in a `backups` folder next to the
+database (the last five are kept), upgrades a backup from an older version, and signs everyone out; they sign in again with the
+accounts in the backup. Use the app's own download rather than copying the database file by hand while the app is running. The
+Docker setup keeps the database in the `aa-data` volume, so back up through the app or copy that volume.
+
+Published links also show when each was **last opened** (to the minute, at most one write a minute), so you can see which are
+still in use before withdrawing them. The students' own page does not show it, and nothing about who opened a link is stored.
+
 ## Roadmap
 
 - [x] Domain model, CP-SAT solver, validator, synthetic data
@@ -496,10 +515,11 @@ font such as Noto Sans.
 - [x] Shared mode: sign-in, roles, sharing, refusal of stale saves, Docker (first slice)
 - [x] Editors limited to some departments
 - [x] Read-only publishing links
-- [x] Activity log (tamper-evident, per institution and for administrators)
+- [x] Activity log (tamper-evident, per institution and for administrators), with optional clean-up
+- [x] Backup and restore of all the data; "last opened" on published links
 - [x] Password reset by e-mail (optional, needs a mail server)
 - [ ] Single sign-on
-- [x] Browser tests in CI (fifteen journeys driving the real app)
+- [x] Browser tests in CI (seventeen journeys driving the real app)
 - [x] PDF and Excel export
 - [x] Soft goals: idle gaps, balanced days, faculty "avoid" preferences, configurable weights
 - [x] Goals for keeping a class in one classroom and avoiding early or late lectures (off by default)
@@ -515,7 +535,7 @@ This repository contains only fictional data. Never commit real student or staff
 ## Browser tests
 
 `e2e/` holds journeys that drive the real app in a real browser: create, generate, lock, share, import, export, sign in, and
-so on (fifteen so far, about 205 checks). Each one starts its own copy of the app with an empty data folder.
+so on (seventeen so far, about 225 checks). Each one starts its own copy of the app with an empty data folder.
 
 ```bash
 cd frontend && npm run build:app            # the screen they drive

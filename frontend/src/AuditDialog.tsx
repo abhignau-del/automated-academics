@@ -21,6 +21,8 @@ export function AuditDialog({ iid, name, onClose }: { iid?: string; name?: strin
   const [user, setUser] = useState("");
   const [since, setSince] = useState("");
   const [integrity, setIntegrity] = useState<string | null>(null);
+  const [keepDays, setKeepDays] = useState(365);
+  const [tidied, setTidied] = useState<string | null>(null);
 
   const filter: AuditFilter = { action: area, q, user, since: since ? new Date(since).toISOString() : "" };
   const key = JSON.stringify(filter);
@@ -39,8 +41,9 @@ export function AuditDialog({ iid, name, onClose }: { iid?: string; name?: strin
     setIntegrity("Checking…");
     try {
       const v = await api.verifyAudit();
-      setIntegrity(v.ok ? `Intact: all ${v.checked} entries check out.`
-        : `Something was altered or removed at or near entry ${v.first_bad} (${v.checked} entries before it were fine).`);
+      const earlier = v.pruned ? ` Older entries (${v.pruned.removed} in all, up to ${new Date(v.pruned.at).toLocaleDateString()}) were deleted on purpose.` : "";
+      setIntegrity((v.ok ? `Intact: all ${v.checked} entries check out.`
+        : `Something was altered or removed at or near entry ${v.first_bad} (${v.checked} entries before it were fine).`) + earlier);
     } catch (e) { setIntegrity(message(e)); }
   }
 
@@ -51,7 +54,7 @@ export function AuditDialog({ iid, name, onClose }: { iid?: string; name?: strin
         <h3>{name ? `History of “${name}”` : "Activity log"}</h3>
         <p className="muted small">
           Who signed in, changed data, generated or edited timetables, shared or published, newest first. Passwords and link addresses are never recorded.
-          Entries can't be edited or deleted from here.
+          Entries can't be edited{iid ? "" : "; an administrator can delete old ones (below)"}.
         </p>
         {error && <div className="alert" role="alert">{error}<button onClick={() => setError(null)}>×</button></div>}
         <div className="toolbar">
@@ -79,6 +82,20 @@ export function AuditDialog({ iid, name, onClose }: { iid?: string; name?: strin
           </tbody>
         </table>
         {more && <button className="btn" disabled={busy} onClick={() => void load(true, rows[rows.length - 1]?.seq)}>Load more</button>}
+        {!iid && (
+          <div className="termrow">
+            <label className="inline">Delete entries older than
+              <input type="number" min={30} max={3650} value={keepDays} aria-label="days to keep" onChange={(e) => setKeepDays(Number(e.target.value))} style={{ width: "5em" }} /> days
+            </label>
+            <button className="btn small danger" disabled={!(keepDays >= 30 && keepDays <= 3650)}
+              onClick={() => {
+                if (!confirm(`Delete every activity-log entry older than ${keepDays} days? This cannot be undone. The rest of the log stays verifiable.`)) return;
+                setTidied(null);
+                void api.pruneAudit(keepDays).then((r) => { setTidied(`Deleted ${r.removed} entr${r.removed === 1 ? "y" : "ies"}.`); void load(false); }).catch((e) => setError(message(e)));
+              }}>Delete older entries</button>
+            {tidied && <span role="status" className="muted small">{tidied}</span>}
+          </div>
+        )}
         <div className="modal-actions"><button className="btn" onClick={onClose}>Close</button></div>
       </div>
     </div>

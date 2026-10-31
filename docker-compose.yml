@@ -16,6 +16,8 @@ services:
       # AA_SMTP_PASSWORD: "..."
       # AA_SMTP_FROM: "timetable@example.edu"
       # AA_PUBLIC_URL: "https://timetable.example.edu"
+      # Optional: delete activity-log entries older than this many days (30 or more), checked about once a day.
+      # AA_AUDIT_KEEP_DAYS: "365"
     restart: unless-stopped
 
 volumes:

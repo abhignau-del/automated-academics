@@ -127,3 +127,14 @@ const dayText = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString(
 /** A break such as "16 Nov – 22 Nov · Diwali" (a single day shows once). */
 export const rangeText = (n: { start: string; end: string; label: string }) =>
   (n.start === n.end ? dayText(n.start) : `${dayText(n.start)} – ${dayText(n.end)}`) + (n.label ? ` · ${n.label}` : "");
+
+/** "just now", "5 minutes ago", "3 hours ago", "2 days ago", or the date once it is over a month ago. */
+export function ago(iso: string, now: number = Date.now()): string {
+  const s = Math.max(0, (now - new Date(iso).getTime()) / 1000);
+  const n = (v: number, unit: string) => `${v} ${unit}${v === 1 ? "" : "s"} ago`;
+  if (s < 60) return "just now";
+  if (s < 3600) return n(Math.floor(s / 60), "minute");
+  if (s < 86400) return n(Math.floor(s / 3600), "hour");
+  if (s < 30 * 86400) return n(Math.floor(s / 86400), "day");
+  return "on " + new Date(iso).toLocaleDateString();
+}

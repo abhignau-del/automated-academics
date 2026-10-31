@@ -15,16 +15,22 @@ import json
 import logging
 import os
 import re
+import shutil
+import sqlite3
+import tempfile
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field, model_validator
 
 from . import __version__
@@ -242,17 +248,43 @@ _CSV_ROWS = 50_000  # most rows one CSV download holds
 
 
 RESET_MINUTES = 60
+MIN_KEEP_DAYS = 30  # the shortest the activity log may be cut back to
+MAX_RESTORE_BYTES = 512 * 1024 * 1024
+KEEP_SAFETY_COPIES = 5  # copies made just before a restore that are kept
 UPDATE_DAYS = 14  # how long students are shown "what changed" after a link is pointed at a newer timetable
+
+
+def _env_days(name: str) -> int | None:
+    """A whole number of days from the environment, at least MIN_KEEP_DAYS; anything else is ignored with a warning."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        days = int(raw)
+    except ValueError:
+        days = 0
+    if days < MIN_KEEP_DAYS:
+        log.warning("%s must be a whole number of days, at least %d; ignoring %r", name, MIN_KEEP_DAYS, raw)
+        return None
+    return days
+
+
+class PruneIn(BaseModel):
+    days: int = Field(ge=MIN_KEEP_DAYS, le=3650)
 
 
 def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | None = None,
                static_dir: str | None = None, auth: bool | None = None, mailer: Mailer | None = None,
-               public_url: str | None = None) -> FastAPI:
+               public_url: str | None = None,
+               audit_keep_days: int | None = None) -> FastAPI:
     """`auth` switches on accounts (default: the AA_AUTH environment variable). Off, everyone is one local
     administrator, which is how the single-user desktop app works."""
-    store = Store(db_path or os.environ.get("AA_DB", "automated_academics.db"))
+    db_file = db_path or os.environ.get("AA_DB", "automated_academics.db")
+    store = Store(db_file)
     auth_on = auth if auth is not None else os.environ.get("AA_AUTH", "") not in ("", "0")
     secure_cookie = os.environ.get("AA_COOKIE_SECURE", "") not in ("", "0")
+    keep_days = audit_keep_days if audit_keep_days is not None else _env_days("AA_AUDIT_KEEP_DAYS")
+    pruned_at = [-1e18]  # when the log was last tidied automatically (monotonic seconds)
     throttle = authlib.LoginThrottle()
     bad_links = authlib.LoginThrottle(limit=30, lock_s=60.0)  # slows down anyone guessing published-link addresses
     forgot_throttle = authlib.LoginThrottle(limit=5, lock_s=600.0)  # a few reset e-mails per address, then a pause
@@ -329,6 +361,20 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
             store.add_audit(aid, aname, action, f"{who} {what}", iid, name, detail, ip)
         except Exception:  # noqa: BLE001 - fail open
             log.exception("could not write the audit log")
+        auto_prune()
+
+    def auto_prune() -> None:
+        """If AA_AUDIT_KEEP_DAYS (or `audit_keep_days`) is set, delete older log entries, checked about once a day."""
+        if keep_days is None or time.monotonic() - pruned_at[0] < 86400:
+            return
+        pruned_at[0] = time.monotonic()
+        try:
+            removed = store.prune_audit(keep_days)
+            if removed:
+                store.add_audit(None, "system", "audit.pruned", f"The system deleted {removed} activity-log entries older than {keep_days} days",
+                                detail={"days": keep_days, "removed": removed, "automatic": True})
+        except Exception:  # noqa: BLE001
+            log.exception("could not tidy the audit log")
 
     def allow(request: Request, iid: str, level: str) -> None:
         """Let the signed-in user through if they may `level` ("viewer" / "editor" / "owner") this institution."""
@@ -946,7 +992,7 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         inst = store.get_institution(p["institution_id"])
         return {"id": p["id"], "job_id": p["job_id"], "label": p["label"], "kinds": p["kinds"], "token": p["token"],
                 "path": f"/#/p/{p['token']}", "created_at": p["created_at"], "expires_at": p["expires_at"],
-                "expired": _expired(p), "term_start": p["term_start"], "term_end": p["term_end"], "no_class": p["no_class"], "note": p["note"],
+                "expired": _expired(p), "last_opened_at": p["last_opened_at"], "term_start": p["term_start"], "term_end": p["term_end"], "no_class": p["no_class"], "note": p["note"],
                 "updated_at": p["updated_at"], "times_set": bool(inst and has_times(inst))}
 
     def _expired(p: dict) -> bool:
@@ -1046,6 +1092,10 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         inst, tt = store.get_institution(row["institution_id"]), store.get_timetable(row["job_id"])
         if inst is None or tt is None:
             raise HTTPException(404, "this timetable is no longer available")
+        try:
+            store.touch_publication(row["id"])
+        except sqlite3.Error:  # a busy database must not stop students seeing their timetable
+            log.warning("could not note that a link was opened")
         return row, inst, tt
 
     def previous_timetable(row: dict) -> Timetable | None:
@@ -1203,6 +1253,60 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         return StreamingResponse(io.BytesIO(("\ufeff" + buf.getvalue()).encode("utf-8")), media_type="text/csv",
                                  headers=_attachment("activity-log.csv"))
 
+    # ---------------- backup and restore ----------------
+    def data_admin(request: Request) -> User:
+        """Whole-database actions: the administrator in shared mode; in the single-user app, the one local user."""
+        return admin_only(request) if auth_on else LOCAL_USER
+
+    @app.get("/admin/backup")
+    def backup(request: Request):
+        """A copy of all the data as one file. It holds every institution, timetable, account (with password hashes) and log entry:
+        keep it private."""
+        who = data_admin(request)
+        tmp = Path(tempfile.mkdtemp(prefix="aa-backup-")) / "backup.db"
+        store.backup_to(tmp)
+        audit(request, "backup.downloaded", "downloaded a backup of all the data", actor=who if auth_on else None)
+        name = f"automated-academics-backup-{datetime.now().strftime('%Y-%m-%d')}.db"
+
+        def cleanup() -> None:
+            shutil.rmtree(tmp.parent, ignore_errors=True)
+        return FileResponse(tmp, media_type="application/octet-stream", filename=name, background=BackgroundTask(cleanup))
+
+    @app.post("/admin/restore")
+    async def restore(request: Request, dry_run: bool = False):
+        """Replace all the data with an uploaded backup (the raw file as the request body). `dry_run` only says what it holds.
+        A copy of the current data is saved first, next to the database."""
+        who = data_admin(request)
+        tmp = Path(tempfile.mkdtemp(prefix="aa-restore-"))
+        try:
+            upload, size = tmp / "upload.db", 0
+            with open(upload, "wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_RESTORE_BYTES:
+                        raise HTTPException(413, "that file is too large to be a backup")
+                    f.write(chunk)
+            try:
+                summary = Store.inspect_backup(upload)
+            except ValueError as e:
+                raise HTTPException(422, str(e)) from None
+            if dry_run:
+                return {"summary": summary, "restored": False}
+            if store.has_active_jobs():
+                raise HTTPException(409, "a timetable is being generated; wait for it to finish, then restore")
+            keep = Path(db_file).resolve().parent / "backups"
+            keep.mkdir(exist_ok=True)
+            safety = keep / f"before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.db"
+            store.backup_to(safety)
+            for old in sorted(keep.glob("before-restore-*.db"))[:-KEEP_SAFETY_COPIES]:
+                old.unlink(missing_ok=True)
+            store.restore_from(upload)
+            audit(None, "backup.restored", "restored all the data from a backup (a copy of the earlier data was kept)",
+                  detail={"summary": summary}, actor=getattr(who, "username", None) or "system")
+            return {"summary": summary, "restored": True, "safety_copy": safety.name}
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     @app.get("/audit")
     def audit_all(request: Request, user: str | None = None, action: str | None = None, institution: str | None = None,
                   since: str | None = None, until: str | None = None, q: str | None = None, before: int | None = None,
@@ -1224,6 +1328,16 @@ def create_app(db_path: str | None = None, workers: int = 1, pdf_font: str | Non
         logging_on()
         admin_only(request)
         return store.verify_audit()
+
+    @app.post("/audit/prune")
+    def audit_prune(body: PruneIn, request: Request):
+        """Delete activity-log entries older than `days` (at least 30). The newest entry stays and the rest still verifies."""
+        logging_on()
+        who = admin_only(request)
+        removed = store.prune_audit(body.days)
+        audit(request, "audit.pruned", f"deleted {removed} activity-log entries older than {body.days} days",
+              detail={"days": body.days, "removed": removed}, actor=who)
+        return {"removed": removed, "verify": store.verify_audit()}
 
     @app.get("/institutions/{iid}/audit")
     def institution_audit(iid: str, request: Request, user: str | None = None, action: str | None = None,

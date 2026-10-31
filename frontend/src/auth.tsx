@@ -4,6 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import * as api from "./api";
 import { AuditDialog } from "./AuditDialog";
+import { BackupDialog } from "./BackupDialog";
 import { UsersDialog } from "./UsersDialog";
 import type { AuthStatus, AuthUser } from "./types";
 
@@ -240,7 +241,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 export function AccountMenu() {
   const session = useSession();
   const [open, setOpen] = useState(false);
-  const [dialog, setDialog] = useState<"password" | "people" | "log" | null>(null);
+  const [dialog, setDialog] = useState<"password" | "people" | "log" | "backup" | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -248,7 +249,15 @@ export function AccountMenu() {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
-  if (!session) return null;
+  if (!session) {  // the single-user app has no accounts, but its data can still be backed up
+    return (
+      <>
+        <span className="spacer" />
+        <button className="btn" onClick={() => setDialog("backup")}>Back up…</button>
+        {dialog === "backup" && <BackupDialog shared={false} onClose={() => setDialog(null)} />}
+      </>
+    );
+  }
   const { user, signOut } = session;
   return (
     <>
@@ -262,12 +271,14 @@ export function AccountMenu() {
             <button role="menuitem" onClick={() => { setOpen(false); setDialog("password"); }}>Change password…</button>
             {user.role === "admin" && <button role="menuitem" onClick={() => { setOpen(false); setDialog("people"); }}>People…</button>}
             {user.role === "admin" && <button role="menuitem" onClick={() => { setOpen(false); setDialog("log"); }}>Activity log…</button>}
+            {user.role === "admin" && <button role="menuitem" onClick={() => { setOpen(false); setDialog("backup"); }}>Back up and restore…</button>}
             <button role="menuitem" onClick={() => void signOut()}>Sign out</button>
           </div>
         )}
       </div>
       {dialog === "password" && <PasswordDialog onClose={() => setDialog(null)} />}
       {dialog === "log" && <AuditDialog onClose={() => setDialog(null)} />}
+      {dialog === "backup" && <BackupDialog shared onClose={() => setDialog(null)} />}
       {dialog === "people" && <UsersDialog me={user.id} onClose={() => setDialog(null)} />}
     </>
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "./api";
 import type { Publication } from "./api";
-import { rangeText } from "./times";
+import { ago, rangeText } from "./times";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 type Kind = Publication["kinds"][number];
@@ -66,6 +66,9 @@ export function PublishDialog({ iid, name, jobId, onClose }: { iid: string; name
                       {new Date(p.created_at).toLocaleDateString()}
                       {p.expires_at ? ` · ${p.expired ? "expired" : "until"} ${new Date(p.expires_at).toLocaleDateString()}` : " · no expiry"}
                     </small>
+                    <div className="muted small" aria-label={`last opened ${p.label || p.id}`}>
+                      {p.last_opened_at ? `Last opened ${ago(p.last_opened_at)}` : "Never opened"}
+                    </div>
                     <div className="termrow">
                       <label className="inline">Term from
                         <input type="date" aria-label={`term start of ${p.label || p.id}`} defaultValue={p.term_start ?? ""} key={"s" + p.id + p.term_start}

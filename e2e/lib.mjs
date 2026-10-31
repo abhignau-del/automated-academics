@@ -83,7 +83,7 @@ export async function journey(name, options, body) {
       const page = await ctx.newPage();
       pages.push([label, page]);
       page.on("pageerror", (e) => errors.push(`${label}: ${e}`));
-      page.on("console", (m) => { if (m.type() === "error" && !/404|favicon|401|403|409/.test(m.text())) errors.push(`${label}: ${m.text()}`); });
+      page.on("console", (m) => { if (m.type() === "error" && !/404|favicon|401|403|409|422/.test(m.text())) errors.push(`${label}: ${m.text()}`); });
       page.on("dialog", (d) => d.accept());
       return { ctx, page };
     };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillTimes, inOrder, pretty, rangeText, resizeTimes, timeLabel, timesOn, withLectureCount } from "./times";
+import { ago, fillTimes, inOrder, pretty, rangeText, resizeTimes, timeLabel, timesOn, withLectureCount } from "./times";
 import type { Calendar } from "./types";
 
 const cal = (extra: Partial<Calendar> = {}): Calendar =>
@@ -116,5 +116,23 @@ describe("rangeText", () => {
     const end = new Date("2026-11-22T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
     expect(rangeText({ start: "2026-11-16", end: "2026-11-16", label: "" })).toBe(day);
     expect(rangeText({ start: "2026-11-16", end: "2026-11-22", label: "Diwali" })).toBe(`${day} – ${end} · Diwali`);
+  });
+});
+
+describe("ago", () => {
+  const now = new Date("2026-11-01T12:00:00Z").getTime();
+  const at = (secondsBefore: number) => new Date(now - secondsBefore * 1000).toISOString();
+  it("speaks in the largest sensible unit", () => {
+    expect(ago(at(5), now)).toBe("just now");
+    expect(ago(at(60), now)).toBe("1 minute ago");
+    expect(ago(at(5 * 60 + 30), now)).toBe("5 minutes ago");
+    expect(ago(at(3600), now)).toBe("1 hour ago");
+    expect(ago(at(23 * 3600), now)).toBe("23 hours ago");
+    expect(ago(at(2 * 86400), now)).toBe("2 days ago");
+    expect(ago(at(29 * 86400), now)).toBe("29 days ago");
+    expect(ago(at(45 * 86400), now)).toMatch(/^on /);
+  });
+  it("never goes negative when the clocks differ a little", () => {
+    expect(ago(new Date(now + 5000).toISOString(), now)).toBe("just now");
   });
 });

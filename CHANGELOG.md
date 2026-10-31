@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Housekeeping.** (1) *Activity log clean-up:* an administrator can **Delete older entries** (30 days or more are kept) or set
+  `AA_AUDIT_KEEP_DAYS`; the newest entry always stays and the log still verifies, noting that older entries were removed on purpose.
+  (2) *Backup and restore:* **Back up…** (single-user) or **Back up and restore…** (administrator, shared mode) downloads one database
+  file without sessions or reset links; restoring checks the file first, refuses while a timetable is being generated, keeps a copy of
+  the current data in a `backups` folder (the last five), upgrades older backups and signs everyone out. (3) *Last opened:* each
+  published link shows when it was last opened. Databases gain `audit_anchor` and `publications.last_opened_at` in place.
+
 ## v0.15.0 (2026-10-31)
 
 A goal for spreading a course's sessions over the week. Existing data, workbooks and databases keep working; the goal is off until weighted.

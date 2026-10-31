@@ -201,6 +201,7 @@ export interface Publication {
   id: string; job_id: string; label: string; kinds: ("batch" | "faculty" | "room")[]; token: string;
   path: string; // "/#/p/<token>": append to the site's address
   created_at: string; expires_at: string | null; expired: boolean;
+  last_opened_at: string | null; // when someone last opened the link (null: never)
   term_start: string | null; term_end: string | null; // first and last day of the term (YYYY-MM-DD): lets students add the timetable to a calendar
   no_class: NoClass[]; // holidays and exam weeks a calendar file leaves out
   note: string; updated_at: string | null; times_set: boolean; // times_set: the institution has lecture times, which a calendar file needs
@@ -263,4 +264,14 @@ export const listAudit = (f: AuditFilter, before?: number, iid?: string) =>
   request<AuditEntry[]>(`${iid ? `/institutions/${iid}` : ""}/audit${auditQuery(iid ? { ...f, institution: undefined } : f, { before, limit: 50 })}`);
 export const auditCsvUrl = (f: AuditFilter, iid?: string) =>
   `${API_BASE}${iid ? `/institutions/${iid}` : ""}/audit.csv${auditQuery(iid ? { ...f, institution: undefined } : f)}`;
-export const verifyAudit = () => request<{ ok: boolean; checked: number; first_bad: number | null }>("/audit/verify");
+export interface AuditVerify { ok: boolean; checked: number; first_bad: number | null; pruned: { through: number; at: string; removed: number } | null }
+export const verifyAudit = () => request<AuditVerify>("/audit/verify");
+/** Delete log entries older than `days` (at least 30); the rest of the log still verifies. */
+export const pruneAudit = (days: number) => request<{ removed: number; verify: AuditVerify }>("/audit/prune", json("POST", { days }));
+
+// ---- backup and restore of all the data
+export interface BackupSummary { institutions: number; timetables: number; people: number; links: number; log_entries: number; latest_timetable: string | null }
+export const backupUrl = `${API_BASE}/admin/backup`;
+export const restoreBackup = (file: File, dryRun: boolean) =>
+  request<{ summary: BackupSummary; restored: boolean; safety_copy?: string }>(`/admin/restore${dryRun ? "?dry_run=true" : ""}`,
+    { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });

@@ -47,6 +47,9 @@ CREATE TABLE IF NOT EXISTS audit (
     prev_hash TEXT NOT NULL, hash TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS audit_by_institution ON audit (institution_id, seq);
+CREATE TABLE IF NOT EXISTS audit_anchor (
+    id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL, hash TEXT NOT NULL, pruned_at TEXT NOT NULL, removed INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS publications (
     id TEXT PRIMARY KEY, institution_id TEXT NOT NULL REFERENCES institutions(id), job_id TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE, label TEXT NOT NULL, kinds TEXT NOT NULL,
@@ -96,7 +99,7 @@ class Store:
             c.execute("UPDATE institutions SET updated_at = created_at WHERE updated_at IS NULL")
             # term dates (for calendar files) and the last switch to a newer timetable (for the students' "what changed")
             pub_cols = {r["name"] for r in c.execute("PRAGMA table_info(publications)")}
-            for col in ("term_start", "term_end", "prev_job_id", "updated_at"):
+            for col in ("term_start", "term_end", "prev_job_id", "updated_at", "last_opened_at"):
                 if col not in pub_cols:
                     c.execute(f"ALTER TABLE publications ADD COLUMN {col} TEXT")
             if "note" not in pub_cols:
@@ -305,7 +308,8 @@ class Store:
         with self._conn() as c:
             c.execute("BEGIN IMMEDIATE")  # one writer at a time, so the chain has no forks
             last = c.execute("SELECT hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
-            prev = last["hash"] if last else _GENESIS
+            anchor = c.execute("SELECT hash FROM audit_anchor").fetchone()
+            prev = last["hash"] if last else (anchor["hash"] if anchor else _GENESIS)
             cur = c.execute(
                 "INSERT INTO audit (at, actor_id, actor, action, institution_id, institution, summary, detail, ip, prev_hash, hash) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -342,15 +346,100 @@ class Store:
         return out
 
     def verify_audit(self) -> dict[str, Any]:
-        """Recompute the whole chain. `ok` is False, with the first bad entry, if anything was edited or removed from the middle."""
-        prev, checked = _GENESIS, 0
+        """Recompute the whole chain. `ok` is False, with the first bad entry, if anything was edited or removed from the middle.
+
+        After old entries were deleted on purpose (`prune_audit`) the chain starts from the hash of the last deleted one, which is
+        kept in `audit_anchor`; `pruned` says what was removed."""
         with self._conn() as c:
+            anchor = c.execute("SELECT * FROM audit_anchor").fetchone()
+            prev, checked = (anchor["hash"] if anchor else _GENESIS), 0
+            pruned = {"through": anchor["seq"], "at": anchor["pruned_at"], "removed": anchor["removed"]} if anchor else None
             for r in c.execute("SELECT * FROM audit ORDER BY seq"):
                 row = dict(r)
                 if row["prev_hash"] != prev or row["hash"] != _audit_hash(prev, row):
-                    return {"ok": False, "checked": checked, "first_bad": row["seq"]}
+                    return {"ok": False, "checked": checked, "first_bad": row["seq"], "pruned": pruned}
                 prev, checked = row["hash"], checked + 1
-        return {"ok": True, "checked": checked, "first_bad": None}
+        return {"ok": True, "checked": checked, "first_bad": None, "pruned": pruned}
+
+    def prune_audit(self, older_than_days: int) -> int:
+        """Delete activity-log entries older than that many days and return how many. The newest entry is always kept, and the hash of
+        the last deleted one is remembered so the rest of the chain still verifies."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=older_than_days)).isoformat(timespec="microseconds")
+        with self._conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            newest = c.execute("SELECT MAX(seq) AS m FROM audit").fetchone()["m"]
+            upto = c.execute("SELECT MAX(seq) AS m FROM audit WHERE at < ? AND seq < ?", (cutoff, newest or 0)).fetchone()["m"]
+            if upto is None:
+                return 0
+            last_hash = c.execute("SELECT hash FROM audit WHERE seq=?", (upto,)).fetchone()["hash"]
+            removed = c.execute("DELETE FROM audit WHERE seq <= ?", (upto,)).rowcount
+            before = c.execute("SELECT removed FROM audit_anchor").fetchone()
+            c.execute("INSERT OR REPLACE INTO audit_anchor (id, seq, hash, pruned_at, removed) VALUES (1,?,?,?,?)",
+                      (upto, last_hash, _now(), removed + (before["removed"] if before else 0)))
+        return int(removed)
+
+    # ---- backup and restore ----
+    def backup_to(self, dest: str | Path) -> None:
+        """A consistent copy of the whole database, taken while the app is in use. Sign-in sessions and password-reset links are left out."""
+        src, dst = sqlite3.connect(self.path, timeout=30), sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+            dst.execute("DELETE FROM sessions")
+            dst.execute("DELETE FROM password_resets")
+            dst.commit()
+        finally:
+            dst.close()
+            src.close()
+
+    @staticmethod
+    def inspect_backup(path: str | Path) -> dict[str, Any]:
+        """What a backup file holds; raises ValueError if it isn't a usable copy of this app's data."""
+        try:
+            c = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True, timeout=30)
+        except sqlite3.Error as e:
+            raise ValueError("this is not a backup made by Automated Academics") from e
+        try:
+            try:
+                if c.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise ValueError("this backup file is damaged")
+                tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            except sqlite3.DatabaseError as e:
+                raise ValueError("this is not a backup made by Automated Academics") from e
+            if not {"institutions", "jobs"} <= tables:
+                raise ValueError("this is not a backup made by Automated Academics")
+
+            def count(table: str) -> int:
+                return int(c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]) if table in tables else 0
+            newest = c.execute("SELECT MAX(created_at) FROM jobs").fetchone()[0]
+            return {"institutions": count("institutions"), "timetables": count("jobs"), "people": count("users"),
+                    "links": count("publications"), "log_entries": count("audit"), "latest_timetable": newest}
+        finally:
+            c.close()
+
+    def has_active_jobs(self) -> bool:
+        with self._conn() as c:
+            return c.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone() is not None
+
+    def restore_from(self, src_path: str | Path) -> None:
+        """Replace everything with the contents of a backup file (checked with `inspect_backup`), upgrading it to this version first."""
+        Store(src_path)  # adds any tables and columns a backup from an older version lacks
+        src, dst = sqlite3.connect(str(src_path), timeout=30), sqlite3.connect(self.path, timeout=30)
+        try:
+            src.backup(dst)
+            dst.execute("DELETE FROM sessions")  # nobody stays signed in on the strength of someone else's data
+            dst.execute("DELETE FROM password_resets")
+            dst.commit()
+        finally:
+            dst.close()
+            src.close()
+        Store(self.path)  # WAL mode and any migrations, as after a normal start
+
+    def touch_publication(self, pid: str) -> None:
+        """Remember that a published link was just opened (at most once a minute, so a busy page doesn't mean a write per view)."""
+        now = datetime.now(timezone.utc)
+        with self._conn() as c:
+            c.execute("UPDATE publications SET last_opened_at=? WHERE id=? AND (last_opened_at IS NULL OR last_opened_at < ?)",
+                      (now.isoformat(timespec="microseconds"), pid, (now - timedelta(seconds=60)).isoformat(timespec="microseconds")))
 
     # ---- published (read-only, link-only) timetables ----
     @staticmethod
